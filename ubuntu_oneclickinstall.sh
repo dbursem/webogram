@@ -28,7 +28,7 @@ unzip master.zip
 rm -f master.zip
 mv webogram-master $BASE
 
-SCRIPT=/usr/local/bin/webgram
+SCRIPT=/usr/local/bin/webogram
 
 cat > $SCRIPT <<OEF
 cd /opt/webogram
