@@ -4,11 +4,6 @@ _cur=$(pwd);
 
 trap "cd $_cur; exit" SIGHUP SIGINT SIGTERM
 
-if [ "$(lsb_release -is)" != "Ubuntu" ] ; then
-    echo "This script is only intended to run on Ubuntu"
-    exit 255
-fi
-
 if [ $UID -ne 0 ] ; then
     echo "Please run this as root!"
     exit 255
