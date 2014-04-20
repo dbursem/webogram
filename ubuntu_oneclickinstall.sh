@@ -35,9 +35,8 @@ if [ ! -x '/usr/bin/nodejs' ] ; then
     NODEJS=node
 fi
 cat > $SCRIPT <<OEF
-cd /opt/webogram
-$NODEJS server.js >/dev/null 2>&1 &
-google-chrome-unstable localhost:8000/app/index.html >/dev/null 2>&1 &
+$NODEJS $BASE/server.js &>/dev/null &
+google-chrome-unstable localhost:8000/app/index.html &>/dev/null &
 OEF
 
 chmod +x $SCRIPT
