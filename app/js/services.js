@@ -1,5 +1,5 @@
 /*!
- * Webogram v0.0.21 - messaging web application for MTProto
+ * Webogram v0.2.9 - messaging web application for MTProto
  * https://github.com/zhukov/webogram
  * Copyright (C) 2014 Igor Zhukov <igor.beatle@gmail.com>
  * https://github.com/zhukov/webogram/blob/master/LICENSE
@@ -11,126 +11,7 @@
 
 angular.module('myApp.services', [])
 
-.service('AppConfigManager', function ($q) {
-  var testPrefix = window._testMode ? 't_' : '';
-  var cache = {};
-  var useCs = !!(window.chrome && chrome.storage && chrome.storage.local);
-  var useLs = !useCs && !!window.localStorage;
-
-  function getValue() {
-    var keys = Array.prototype.slice.call(arguments),
-        result = [],
-        single = keys.length == 1,
-        allFound = true;
-
-    for (var i = 0; i < keys.length; i++) {
-      keys[i] = testPrefix + keys[i];
-    }
-
-    angular.forEach(keys, function (key) {
-      if (cache[key] !== undefined) {
-        result.push(cache[key]);
-      }
-      else if (useLs) {
-        var value = localStorage.getItem(key);
-        value = (value === undefined || value === null) ? false : JSON.parse(value);
-        result.push(cache[key] = value);
-      }
-      else if (!useCs) {
-        result.push(cache[key] = false);
-      }
-      else {
-        allFound = false;
-      }
-    });
-
-    if (allFound) {
-      return $q.when(single ? result[0] : result);
-    }
-
-    var deferred = $q.defer();
-
-    chrome.storage.local.get(keys, function (resultObj) {
-      result = [];
-      angular.forEach(keys, function (key) {
-        var value = resultObj[key];
-        value = value === undefined || value === null ? false : JSON.parse(value);
-        result.push(cache[key] = value);
-      });
-
-      deferred.resolve(single ? result[0] : result);
-    });
-
-    return deferred.promise;
-  };
-
-  function setValue(obj) {
-    var keyValues = {};
-    angular.forEach(obj, function (value, key) {
-      keyValues[testPrefix + key] = JSON.stringify(value);
-      cache[testPrefix + key] = value;
-    });
-
-    if (useLs) {
-      angular.forEach(keyValues, function (value, key) {
-        localStorage.setItem(key, value);
-      });
-      return $q.when();
-    }
-
-    if (!useCs) {
-      return $q.when();
-    }
-
-    var deferred = $q.defer();
-
-    chrome.storage.local.set(keyValues, function () {
-      deferred.resolve();
-    });
-
-    return deferred.promise;
-  };
-
-  function removeValue () {
-    var keys = Array.prototype.slice.call(arguments);
-
-    for (var i = 0; i < keys.length; i++) {
-      keys[i] = testPrefix + keys[i];
-    }
-
-    angular.forEach(keys, function(key){
-      delete cache[key];
-    });
-
-    if (useLs) {
-      angular.forEach(keys, function(key){
-        localStorage.removeItem(key);
-      });
-
-      return $q.when();
-    }
-
-    if (!useCs) {
-      return $q.when();
-    }
-
-    var deferred = $q.defer();
-
-    chrome.storage.local.remove(keys, function () {
-      deferred.resolve();
-    });
-
-    return deferred.promise;
-  };
-
-  return {
-    get: getValue,
-    set: setValue,
-    remove: removeValue
-  };
-})
-
-.service('AppUsersManager', function ($rootScope, $modal, $modalStack, $filter, MtpApiFileManager, MtpApiManager, RichTextProcessor, SearchIndexManager) {
+.service('AppUsersManager', function ($rootScope, $modal, $modalStack, $filter, $q, MtpApiFileManager, MtpApiManager, RichTextProcessor, SearchIndexManager, ErrorService) {
   var users = {},
       cachedPhotoLocations = {},
       contactsFillPromise,
@@ -198,6 +79,8 @@ angular.module('myApp.services', [])
       apiUser.rPhone = $filter('phoneNumber')(apiUser.phone);
     }
 
+    apiUser.num = (Math.abs(apiUser.id) % 8) + 1;
+
     if (apiUser.first_name) {
       apiUser.rFirstName = RichTextProcessor.wrapRichText(apiUser.first_name, {noLinks: true, noLinebreaks: true});
       apiUser.rFullName = RichTextProcessor.wrapRichText(apiUser.first_name + ' ' + (apiUser.last_name || ''), {noLinks: true, noLinebreaks: true});
@@ -214,6 +97,7 @@ angular.module('myApp.services', [])
     } else {
       safeReplaceObject(users[apiUser.id], apiUser);
     }
+    $rootScope.$broadcast('user_update', apiUser.id);
 
     if (cachedPhotoLocations[apiUser.id] !== undefined) {
       safeReplaceObject(cachedPhotoLocations[apiUser.id], apiUser && apiUser.photo && apiUser.photo.photo_small || {empty: true});
@@ -244,11 +128,9 @@ angular.module('myApp.services', [])
       cachedPhotoLocations[id] = user && user.photo && user.photo.photo_small || {empty: true};
     }
 
-    var num = (Math.abs(id) % 8) + 1;
-
     return {
-      num: num,
-      placeholder: 'img/placeholders/' + placeholder + 'Avatar' + num + '@2x.png',
+      num: user.num,
+      placeholder: 'img/placeholders/' + placeholder + 'Avatar' + user.num + '@2x.png',
       location: cachedPhotoLocations[id]
     };
   }
@@ -280,11 +162,19 @@ angular.module('myApp.services', [])
     var scope = $rootScope.$new();
     scope.userID = userID;
 
+    var tUrl = 'partials/user_modal.html',
+        className = 'user_modal_window page_modal';
+
+    if (Config.Navigator.mobile) {
+      tUrl = 'partials/mobile/user_modal.html';
+      className += ' mobile_modal';
+    }
+
     var modalInstance = $modal.open({
-      templateUrl: 'partials/user_modal.html',
+      templateUrl: tUrl,
       controller: 'UserModalController',
       scope: scope,
-      windowClass: 'user_modal_window'
+      windowClass: className
     });
   };
   $rootScope.openUser = openUser;
@@ -307,7 +197,39 @@ angular.module('myApp.services', [])
         onContactUpdated(foundUserID = importedContact.user_id, true);
       });
 
-      return foundUserID;
+      return foundUserID ? 1 : 0;
+    });
+  };
+
+  function importContacts (contacts) {
+    var inputContacts = [],
+        i, j;
+
+    for (i = 0; i < contacts.length; i++) {
+      for (j = 0; j < contacts[i].phones.length; j++) {
+        inputContacts.push({
+          _: 'inputPhoneContact',
+          client_id: (i << 16 | j).toString(10),
+          phone: contacts[i].phones[j],
+          first_name: contacts[i].first_name,
+          last_name: contacts[i].last_name
+        });
+      }
+    }
+
+    return MtpApiManager.invokeApi('contacts.importContacts', {
+      contacts: inputContacts,
+      replace: false
+    }).then(function (importedContactsResult) {
+      saveApiUsers(importedContactsResult.users);
+
+      var result = [];
+      angular.forEach(importedContactsResult.imported, function (importedContact) {
+        onContactUpdated(importedContact.user_id, true);
+        result.push(importedContact.user_id);
+      });
+
+      return result;
     });
   };
 
@@ -340,6 +262,19 @@ angular.module('myApp.services', [])
       }
     }
   }
+
+  function openImportContact () {
+    return $modal.open({
+      templateUrl: 'partials/import_contact_modal.html',
+      controller: 'ImportContactModalController',
+      windowClass: 'import_contact_modal_window'
+    }).result.then(function (foundUserID) {
+      if (!foundUserID) {
+        return $q.reject();
+      }
+      return foundUserID;
+    });
+  };
 
 
   $rootScope.$on('apiUpdate', function (e, update) {
@@ -380,15 +315,109 @@ angular.module('myApp.services', [])
     saveApiUsers: saveApiUsers,
     saveApiUser: saveApiUser,
     getUser: getUser,
+    getUserInput: getUserInput,
     getUserPhoto: getUserPhoto,
     getUserString: getUserString,
     getUserSearchText: getUserSearchText,
     hasUser: hasUser,
     importContact: importContact,
+    importContacts: importContacts,
     deleteContacts: deleteContacts,
     wrapForFull: wrapForFull,
-    openUser: openUser
+    openUser: openUser,
+    openImportContact: openImportContact
   }
+})
+
+.service('PhonebookContactsService', function ($q, $modal, $sce, FileManager) {
+
+  var phonebookContactsPromise;
+
+  return {
+    isAvailable: isAvailable,
+    openPhonebookImport: openPhonebookImport,
+    getPhonebookContacts: getPhonebookContacts
+  };
+
+  function isAvailable () {
+    if (Config.Navigator.mobile && Config.Navigator.ffos && Config.Modes.packed) {
+      try {
+        return navigator.mozContacts && navigator.mozContacts.getAll;
+      } catch (e) {
+        console.error(dT(), 'phonebook n/a', e);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function openPhonebookImport () {
+    return $modal.open({
+      templateUrl: 'partials/mobile/phonebook_modal.html',
+      controller: 'PhonebookModalController',
+      windowClass: 'phonebook_modal_window page_modal mobile_modal'
+    });
+  }
+
+  function getPhonebookContacts () {
+    if (phonebookContactsPromise) {
+      return phonebookContactsPromise;
+    }
+
+    try {
+      var request = window.navigator.mozContacts.getAll({});
+    } catch (e) {
+      return $q.reject(e);
+    }
+
+    var deferred = $q.defer(),
+        contacts = [],
+        count = 0;
+
+    request.onsuccess = function () {
+      if (this.result) {
+        var contact = {
+          id: count,
+          first_name: (this.result.givenName || []).join(' '),
+          last_name: (this.result.familyName || []).join(' '),
+          phones: []
+        };
+
+        if (this.result.tel !== undefined) {
+          for (var i = 0; i < this.result.tel.length; i++) {
+            contact.phones.push(this.result.tel[i].value);
+          }
+        }
+        if (this.result.photo && this.result.photo[0]) {
+          try {
+            contact.photo = FileManager.getUrl(this.result.photo[0]);
+          } catch (e) {}
+        }
+        if (!contact.photo) {
+          contact.photo = 'img/placeholders/UserAvatar' + ((Math.abs(count) % 8) + 1) + '@2x.png';
+        }
+        contact.photo = $sce.trustAsResourceUrl(contact.photo);
+
+        count++;
+        contacts.push(contact);
+      }
+
+      if (!this.result || count >= 1000) {
+        deferred.resolve(contacts);
+        return;
+      }
+
+      this.continue();
+    }
+
+    request.onerror = function (e) {
+      console.log('phonebook error', e, e.type, e.message);
+      deferred.reject(e);
+    }
+
+    return phonebookContactsPromise = deferred.promise;
+  }
+
 })
 
 .service('AppChatsManager', function ($rootScope, $modal, MtpApiFileManager, MtpApiManager, AppUsersManager, RichTextProcessor) {
@@ -450,7 +479,6 @@ angular.module('myApp.services', [])
       MtpApiManager.getUserID().then(function (myID) {
         angular.forEach(chatFull.participants.participants, function(participant){
           participant.user = AppUsersManager.getUser(participant.user_id);
-          participant.userPhoto = AppUsersManager.getUserPhoto(participant.user_id, 'User');
           participant.inviter = AppUsersManager.getUser(participant.inviter_id);
           participant.canKick = myID != participant.user_id && (myID == chatFull.participants.admin_id || myID == participant.inviter_id);
         });
@@ -474,11 +502,19 @@ angular.module('myApp.services', [])
     var scope = $rootScope.$new();
     scope.chatID = chatID;
 
+    var tUrl = 'partials/chat_modal.html',
+        className = 'chat_modal_window page_modal';
+
+    if (Config.Navigator.mobile) {
+      tUrl = 'partials/mobile/chat_modal.html';
+      className += ' mobile_modal';
+    }
+
     var modalInstance = $modal.open({
-      templateUrl: 'partials/chat_modal.html',
+      templateUrl: tUrl,
       controller: 'ChatModalController',
-      windowClass: 'chat_modal_window',
-      scope: scope
+      scope: scope,
+      windowClass: className
     });
   }
 
@@ -564,7 +600,7 @@ angular.module('myApp.services', [])
   var badCharsRe = /[`~!@#$%^&*()\-_=+\[\]\\|{}'";:\/?.>,<\s]+/g,
       trimRe = /^\s+|\s$/g,
       accentsReplace = {
-        a: /[áâäà]/g,
+        a: /[åáâäà]/g,
         e: /[éêëè]/g,
         i: /[íîïì]/g,
         o: /[óôöò]/g,
@@ -629,7 +665,6 @@ angular.module('myApp.services', [])
   }
 
   function search (query, searchIndex) {
-    console.time('search');
     var shortIndexes = searchIndex.shortIndexes,
         fullTexts = searchIndex.fullTexts;
 
@@ -666,12 +701,11 @@ angular.module('myApp.services', [])
       }
     }
 
-    console.timeEnd('search');
     return newFoundObjs;
   }
 })
 
-.service('AppMessagesManager', function ($q, $rootScope, $location, $filter, ApiUpdatesManager, AppUsersManager, AppChatsManager, AppPeersManager, AppPhotosManager, AppVideoManager, AppDocsManager, AppAudioManager, MtpApiManager, MtpApiFileManager, RichTextProcessor, NotificationsManager, SearchIndexManager) {
+.service('AppMessagesManager', function ($q, $rootScope, $location, $filter, ApiUpdatesManager, AppUsersManager, AppChatsManager, AppPeersManager, AppPhotosManager, AppVideoManager, AppDocsManager, AppAudioManager, MtpApiManager, MtpApiFileManager, RichTextProcessor, NotificationsManager, SearchIndexManager, Storage) {
 
   var messagesStorage = {};
   var messagesForHistory = {};
@@ -689,6 +723,23 @@ angular.module('myApp.services', [])
 
   var lastSearchFilter = {},
       lastSearchResults = [];
+
+  var serverTimeOffset = 0,
+      timestampNow = tsNow(true),
+      midnightNoOffset = timestampNow - (timestampNow % 86400),
+      midnightOffseted = new Date(),
+      midnightOffset;
+
+  Storage.get('server_time_offset').then(function (to) {
+    if (to) {
+      serverTimeOffset = to;
+    }
+  });
+
+  midnightOffseted.setHours(0);
+  midnightOffseted.setMinutes(0);
+  midnightOffseted.setSeconds(0);
+  midnightOffset = midnightNoOffset - (Math.floor(+midnightOffseted / 1000));
 
   NotificationsManager.start();
 
@@ -752,9 +803,7 @@ angular.module('myApp.services', [])
         }
       }
 
-      curDialogStorage.count = dialogsResult._ == 'messages.dialogsSlice'
-        ? dialogsResult.count
-        : dialogsResult.dialogs.length;
+      curDialogStorage.count = dialogsResult.count || dialogsResult.dialogs.length;
 
       curDialogStorage.dialogs.splice(offset, curDialogStorage.dialogs.length - offset);
       angular.forEach(dialogsResult.dialogs, function (dialog) {
@@ -783,21 +832,25 @@ angular.module('myApp.services', [])
     });
   }
 
-  function fillHistoryStorage (inputPeer, maxID, fullLimit, historyStorage) {
-    console.log('fill history storage', inputPeer, maxID, fullLimit, angular.copy(historyStorage));
+  function requestHistory (inputPeer, maxID, limit, offset) {
     return MtpApiManager.invokeApi('messages.getHistory', {
       peer: inputPeer,
-      offset: 0,
-      limit: fullLimit,
+      offset: offset || 0,
+      limit: limit || 0,
       max_id: maxID || 0
     }).then(function (historyResult) {
       AppUsersManager.saveApiUsers(historyResult.users);
       AppChatsManager.saveApiChats(historyResult.chats);
       saveMessages(historyResult.messages);
 
-      historyStorage.count = historyResult._ == 'messages.messagesSlice'
-        ? historyResult.count
-        : historyResult.messages.length;
+      return historyResult;
+    });
+  }
+
+  function fillHistoryStorage (inputPeer, maxID, fullLimit, historyStorage) {
+    // console.log('fill history storage', inputPeer, maxID, fullLimit, angular.copy(historyStorage));
+    return requestHistory (inputPeer, maxID, fullLimit).then(function (historyResult) {
+      historyStorage.count = historyResult.count || historyResult.messages.length;
 
       var offset = 0;
       if (maxID > 0) {
@@ -824,11 +877,13 @@ angular.module('myApp.services', [])
     });
   };
 
-  function getHistory (inputPeer, maxID, limit) {
-
+  function getHistory (inputPeer, maxID, limit, backLimit) {
     var peerID = AppPeersManager.getPeerID(inputPeer),
         historyStorage = historiesStorage[peerID],
         offset = 0,
+        offsetNotFound = false,
+        unreadOffset = false,
+        unreadSkip = false,
         resultPending = [];
 
     if (historyStorage === undefined) {
@@ -838,38 +893,78 @@ angular.module('myApp.services', [])
       resultPending = historyStorage.pending.slice();
     }
 
-    var unreadLimit = false;
     if (!limit && !maxID) {
       var foundDialog = getDialogByPeerID(peerID);
       if (foundDialog && foundDialog[0] && foundDialog[0].unread_count > 1) {
-        unreadLimit = Math.min(1000, foundDialog[0].unread_count);
-        limit = unreadLimit;
+        var unreadCount = foundDialog[0].unread_count;
+        if (unreadSkip = (unreadCount > 50)) {
+          limit = 10;
+          unreadOffset = 6;
+          offset = unreadCount - unreadOffset;
+        } else {
+          limit = Math.max(10, unreadCount + 2);
+          unreadOffset = unreadCount;
+        }
       }
     }
-
-    if (maxID > 0) {
+    else if (maxID > 0) {
+      offsetNotFound = true;
       for (offset = 0; offset < historyStorage.history.length; offset++) {
         if (maxID > historyStorage.history[offset]) {
+          offsetNotFound = false;
           break;
         }
       }
     }
 
-    if (historyStorage.count !== null && historyStorage.history.length == historyStorage.count ||
-      historyStorage.history.length >= offset + (limit || 1)
-    ) {
+    if (!offsetNotFound && (
+          historyStorage.count !== null && historyStorage.history.length == historyStorage.count ||
+          historyStorage.history.length >= offset + (limit || 1)
+    )) {
+      if (backLimit) {
+        backLimit = Math.min(offset, backLimit);
+        offset = Math.max(0, offset - backLimit);
+        limit += backLimit;
+      } else {
+        limit = limit || (offset ? 20 : 5);
+      }
+
       return $q.when({
         count: historyStorage.count,
-        history: resultPending.concat(historyStorage.history.slice(offset, offset + (limit || 20))),
-        unreadLimit: unreadLimit
+        history: resultPending.concat(historyStorage.history.slice(offset, offset + limit)),
+        unreadOffset: unreadOffset,
+        unreadSkip: unreadSkip
       });
     }
 
-    if (unreadLimit) {
-      limit = Math.max(20, unreadLimit + 2);
+    if (!backLimit && !limit) {
+      limit = 20;
+    }
+    if (offsetNotFound) {
+      offset = 0;
     }
 
-    limit = limit || 20;
+    if (backLimit || unreadSkip || maxID && historyStorage.history.indexOf(maxID) == -1) {
+      if (backLimit) {
+        offset = -backLimit;
+        limit += backLimit;
+      }
+      return requestHistory(inputPeer, maxID, limit, offset).then(function (historyResult) {
+        historyStorage.count = historyResult.count || historyResult.messages.length;
+
+        var history = [];
+        angular.forEach(historyResult.messages, function (message) {
+          history.push(message.id);
+        });
+
+        return {
+          count: historyStorage.count,
+          history: resultPending.concat(history),
+          unreadOffset: unreadOffset,
+          unreadSkip: unreadSkip
+        };
+      })
+    }
 
     return fillHistoryStorage(inputPeer, maxID, limit, historyStorage).then(function () {
       offset = 0;
@@ -884,7 +979,8 @@ angular.module('myApp.services', [])
       return {
         count: historyStorage.count,
         history: resultPending.concat(historyStorage.history.slice(offset, offset + limit)),
-        unreadLimit: unreadLimit
+        unreadOffset: unreadOffset,
+        unreadSkip: unreadSkip
       };
     });
   }
@@ -892,16 +988,17 @@ angular.module('myApp.services', [])
   function getSearch (inputPeer, query, inputFilter, maxID, limit) {
     var foundMsgs = [],
         useSearchCache = !query,
-        sameSearchCache = useSearchCache && angular.equals(lastSearchFilter, inputFilter);
+        peerID = AppPeersManager.getPeerID(inputPeer),
+        newSearchFilter = {peer: peerID, filter: inputFilter},
+        sameSearchCache = useSearchCache && angular.equals(lastSearchFilter, newSearchFilter);
 
     if (useSearchCache && !sameSearchCache) {
-      lastSearchFilter = inputFilter;
+      lastSearchFilter = newSearchFilter;
       lastSearchResults = [];
     }
 
     if (!maxID && !query) {
-      var peerID = AppPeersManager.getPeerID(inputPeer),
-          historyStorage = historiesStorage[peerID];
+      var historyStorage = historiesStorage[peerID];
 
       if (historyStorage !== undefined && historyStorage.history.length) {
         var neededContents = {},
@@ -924,6 +1021,10 @@ angular.module('myApp.services', [])
 
           case 'inputMessagesFilterDocument':
             neededContents['messageMediaDocument'] = true;
+            break;
+
+          case 'inputMessagesFilterAudio':
+            neededContents['messageMediaAudio'] = true;
             break;
         }
         for (i = 0; i < historyStorage.history.length; i++) {
@@ -976,9 +1077,7 @@ angular.module('myApp.services', [])
       AppChatsManager.saveApiChats(searchResult.chats);
       saveMessages(searchResult.messages);
 
-      var foundCount = searchResult._ == 'messages.messagesSlice'
-        ? searchResult.count
-        : searchResult.messages.length;
+      var foundCount = searchResult.count || searchResult.messages.length;
 
       foundMsgs = [];
       angular.forEach(searchResult.messages, function (message) {
@@ -1004,18 +1103,23 @@ angular.module('myApp.services', [])
     return MtpApiManager.invokeApi('messages.deleteMessages', {
       id: messageIDs
     }).then(function (deletedMessageIDs) {
-
-      ApiUpdatesManager.saveUpdate({
-        _: 'updateDeleteMessages',
-        messages: deletedMessageIDs
+      ApiUpdatesManager.processUpdateMessage({
+        _: 'updateShort',
+        update: {
+          _: 'updateDeleteMessages',
+          messages: deletedMessageIDs
+        }
       });
-
       return deletedMessageIDs;
     });
   }
 
   function processAffectedHistory (inputPeer, affectedHistory, method) {
-    if (!ApiUpdatesManager.saveSeq(affectedHistory.seq)) {
+    if (!ApiUpdatesManager.processUpdateMessage({
+        _: 'updates',
+        seq: affectedHistory.seq,
+        updates: []
+      })) {
       return false;
     }
     if (!affectedHistory.offset) {
@@ -1060,7 +1164,11 @@ angular.module('myApp.services', [])
       }
     }
 
-    var promise = MtpApiManager.invokeApi('messages.readHistory', {
+    if (historyStorage.readPromise) {
+      return historyStorage.readPromise;
+    }
+
+    historyStorage.readPromise = MtpApiManager.invokeApi('messages.readHistory', {
       peer: inputPeer,
       offset: 0,
       max_id: 0
@@ -1072,8 +1180,9 @@ angular.module('myApp.services', [])
         foundDialog[0].unread_count = 0;
         $rootScope.$broadcast('dialog_unread', {peerID: peerID, count: 0});
       }
+    })['finally'](function () {
+      delete historyStorage.readPromise;
     });
-
 
     if (historyStorage && historyStorage.history.length) {
       var messageID, message, i, peerID, foundDialog, dialog;
@@ -1092,7 +1201,7 @@ angular.module('myApp.services', [])
       }
     }
 
-    return promise;
+    return historyStorage.readPromise;
   }
 
   function flushHistory (inputPeer) {
@@ -1118,6 +1227,8 @@ angular.module('myApp.services', [])
   function saveMessages (apiMessages) {
     angular.forEach(apiMessages, function (apiMessage) {
       messagesStorage[apiMessage.id] = apiMessage;
+
+      apiMessage.date -= serverTimeOffset;
 
       if (apiMessage.media && apiMessage.media._ == 'messageMediaPhoto') {
         AppPhotosManager.savePhoto(apiMessage.media.photo);
@@ -1157,7 +1268,7 @@ angular.module('myApp.services', [])
         to_id: AppPeersManager.getOutputPeer(peerID),
         out: true,
         unread: true,
-        date: tsNow() / 1000,
+        date: tsNow(true) + serverTimeOffset,
         message: text,
         media: {_: 'messageMediaEmpty'},
         random_id: randomIDS,
@@ -1189,27 +1300,31 @@ angular.module('myApp.services', [])
           peer: inputPeer,
           message: text,
           random_id: randomID
-        }, sentRequestOptions).then(function (result) {
+        }, sentRequestOptions).then(function (sentMessage) {
+          message.date = sentMessage.date;
+          message.id = sentMessage.id;
+
+          ApiUpdatesManager.processUpdateMessage({
+            _: 'updates',
+            users: [],
+            chats: [],
+            seq: sentMessage.seq,
+            updates: [{
+              _: 'updateMessageID',
+              random_id: randomIDS,
+              id: sentMessage.id
+            }, {
+              _: 'updateNewMessage',
+              message: message,
+              pts: sentMessage.pts
+            }]
+          });
+        }, function (error) {
+          toggleError(true);
+        })['finally'](function () {
           if (pendingAfterMsgs[peerID] === sentRequestOptions) {
             delete pendingAfterMsgs[peerID];
           }
-          if (ApiUpdatesManager.saveSeq(result.seq)) {
-            ApiUpdatesManager.saveUpdate({
-              _: 'updateMessageID',
-              random_id: randomIDS,
-              id: result.id
-            });
-
-            message.date = result.date;
-            message.id = result.id;
-            ApiUpdatesManager.saveUpdate({
-              _: 'updateNewMessage',
-              message: message,
-              pts: result.pts
-            });
-          }
-        }, function (error) {
-          toggleError(true);
         });
 
         pendingAfterMsgs[peerID] = sentRequestOptions;
@@ -1245,9 +1360,9 @@ angular.module('myApp.services', [])
     } else if (file.type.substr(0, 6) == 'video/') {
       attachType = 'video';
       fileName = 'video.mp4';
-    } else if (file.type == 'audio/mpeg' || file.type == 'audio/mp3') {
+    } else if (file.type.substr(0, 6) == 'audio/') {
       attachType = 'audio';
-      fileName = 'audio.mp3';
+      fileName = 'audio.' + file.type.split('/')[1] || 'mp3';
     } else {
       attachType = 'document';
       fileName = 'document.' + file.type.split('/')[1];
@@ -1277,7 +1392,7 @@ angular.module('myApp.services', [])
         to_id: AppPeersManager.getOutputPeer(peerID),
         out: true,
         unread: true,
-        date: tsNow() / 1000,
+        date: tsNow(true) + serverTimeOffset,
         message: '',
         media: media,
         random_id: randomIDS,
@@ -1315,11 +1430,11 @@ angular.module('myApp.services', [])
                 break;
 
               case 'video':
-                inputMedia = {_: 'inputMediaUploadedVideo', file: inputFile, duration: 0, w: 0, h: 0};
+                inputMedia = {_: 'inputMediaUploadedVideo', file: inputFile, duration: 0, w: 0, h: 0, mime_type: file.type};
                 break;
 
               case 'audio':
-                inputMedia = {_: 'inputMediaUploadedAudio', file: inputFile, duration: 0};
+                inputMedia = {_: 'inputMediaUploadedAudio', file: inputFile, duration: 0, mime_type: file.type};
                 break;
 
               case 'document':
@@ -1330,25 +1445,26 @@ angular.module('myApp.services', [])
               peer: inputPeer,
               media: inputMedia,
               random_id: randomID
-            }).then(function (result) {
-              if (ApiUpdatesManager.saveSeq(result.seq)) {
-                ApiUpdatesManager.saveUpdate({
+            }).then(function (statedMessage) {
+              message.date = statedMessage.message.date;
+              message.id = statedMessage.message.id;
+              message.media = statedMessage.message.media;
+
+              ApiUpdatesManager.processUpdateMessage({
+                _: 'updates',
+                users: statedMessage.users,
+                chats: statedMessage.chats,
+                seq: statedMessage.seq,
+                updates: [{
                   _: 'updateMessageID',
                   random_id: randomIDS,
-                  id: result.message.id
-                });
-
-                message.date = result.message.date;
-                message.id = result.message.id;
-                message.media = result.message.media;
-
-                ApiUpdatesManager.saveUpdate({
+                  id: statedMessage.message.id
+                }, {
                   _: 'updateNewMessage',
                   message: message,
-                  pts: result.pts
-                });
-              }
-
+                  pts: statedMessage.pts
+                }]
+              });
             }, function (error) {
               toggleError(true);
             });
@@ -1404,6 +1520,10 @@ angular.module('myApp.services', [])
         case 'inputMediaContact':
           media = angular.extend({}, inputMedia, {_: 'messageMediaContact'});
           break;
+
+        case 'inputMediaPhoto':
+          media = {photo: AppPhotosManager.getPhoto(inputMedia.id.id)};
+          break;
       }
 
       var message = {
@@ -1413,7 +1533,7 @@ angular.module('myApp.services', [])
         to_id: AppPeersManager.getOutputPeer(peerID),
         out: true,
         unread: true,
-        date: tsNow() / 1000,
+        date: tsNow(true) + serverTimeOffset,
         message: '',
         media: media,
         random_id: randomIDS,
@@ -1440,24 +1560,26 @@ angular.module('myApp.services', [])
           peer: inputPeer,
           media: inputMedia,
           random_id: randomID
-        }).then(function (result) {
-          if (ApiUpdatesManager.saveSeq(result.seq)) {
-            ApiUpdatesManager.saveUpdate({
+        }).then(function (statedMessage) {
+          message.date = statedMessage.message.date;
+          message.id = statedMessage.message.id;
+          message.media = statedMessage.message.media;
+
+          ApiUpdatesManager.processUpdateMessage({
+            _: 'updates',
+            users: statedMessage.users,
+            chats: statedMessage.chats,
+            seq: statedMessage.seq,
+            updates: [{
               _: 'updateMessageID',
               random_id: randomIDS,
-              id: result.message.id
-            });
-
-            message.date = result.message.date;
-            message.id = result.message.id;
-            message.media = result.message.media;
-
-            ApiUpdatesManager.saveUpdate({
+              id: statedMessage.message.id
+            }, {
               _: 'updateNewMessage',
               message: message,
-              pts: result.pts
-            });
-          }
+              pts: statedMessage.pts
+            }]
+          });
         }, function (error) {
           toggleError(true);
         });
@@ -1474,25 +1596,28 @@ angular.module('myApp.services', [])
   }
 
   function forwardMessages (peerID, msgIDs) {
+    msgIDs = msgIDs.sort();
+
     return MtpApiManager.invokeApi('messages.forwardMessages', {
       peer: AppPeersManager.getInputPeerByID(peerID),
       id: msgIDs
-    }).then(function (forwardResult) {
-      AppUsersManager.saveApiUsers(forwardResult.users);
-      AppChatsManager.saveApiChats(forwardResult.chats);
-
-      if (ApiUpdatesManager.saveSeq(forwardResult.seq)) {
-        angular.forEach(forwardResult.messages, function(apiMessage) {
-
-          ApiUpdatesManager.saveUpdate({
-            _: 'updateNewMessage',
-            message: apiMessage,
-            pts: forwardResult.pts
-          });
-
+    }).then(function (statedMessages) {
+      var updates = [];
+      angular.forEach(statedMessages.messages, function(apiMessage) {
+        updates.push({
+          _: 'updateNewMessage',
+          message: apiMessage,
+          pts: statedMessages.pts
         });
-      }
+      });
 
+      ApiUpdatesManager.processUpdateMessage({
+        _: 'updates',
+        users: statedMessages.users,
+        chats: statedMessages.chats,
+        seq: statedMessages.seq,
+        updates: updates
+      });
     });
   };
 
@@ -1507,9 +1632,12 @@ angular.module('myApp.services', [])
           historyStorage = historiesStorage[peerID],
           i;
 
-      ApiUpdatesManager.saveUpdate({
-        _: 'updateDeleteMessages',
-        messages: [tempID]
+      ApiUpdatesManager.processUpdateMessage({
+        _: 'updateShort',
+        update: {
+          _: 'updateDeleteMessages',
+          messages: [tempID]
+        }
       });
 
       for (i = 0; i < historyStorage.pending.length; i++) {
@@ -1632,13 +1760,6 @@ angular.module('myApp.services', [])
       message.media.progress = messagesStorage[msgID].media.progress;
     }
 
-    message.fromUser = AppUsersManager.getUser(message.from_id);
-    message.fromPhoto = AppUsersManager.getUserPhoto(message.from_id, 'User');
-
-    if (message._ == 'messageForwarded') {
-      message.fwdUser = AppUsersManager.getUser(message.fwd_from_id);
-    }
-
     if (message.media) {
       switch (message.media._) {
         case 'messageMediaPhoto':
@@ -1664,11 +1785,6 @@ angular.module('myApp.services', [])
           );
           break;
       }
-
-      if (message.media.user_id) {
-        message.media.user = AppUsersManager.getUser(message.media.user_id);
-        message.media.userPhoto = AppUsersManager.getUserPhoto(message.media.user_id, 'User');
-      }
     }
     else if (message.action) {
       switch (message.action._) {
@@ -1681,11 +1797,6 @@ angular.module('myApp.services', [])
           message.action.rTitle = RichTextProcessor.wrapRichText(message.action.title, {noLinks: true, noLinebreaks: true}) || 'DELETED';
           break;
       }
-
-      if (message.action.user_id) {
-        message.action.user = AppUsersManager.getUser(message.action.user_id);
-        message.action.userPhoto = AppUsersManager.getUserPhoto(message.action.user_id, 'User');
-      }
     }
 
     if (message.message && message.message.length) {
@@ -1693,6 +1804,64 @@ angular.module('myApp.services', [])
     }
 
     return messagesForHistory[msgID] = message;
+  }
+
+  function regroupWrappedHistory (history, limit) {
+    if (!history || !history.length) {
+      return;
+    }
+    var start = 0,
+        len = history.length,
+        end = len,
+        i, curDay, prevDay, curMessage, prevMessage;
+
+    if (limit > 0) {
+      end = Math.min(limit, len);
+    } else if (limit < 0) {
+      start = Math.max(0, end + limit);
+    }
+
+    for (i = start; i < end; i++) {
+      curMessage = history[i];
+      curDay = Math.floor((curMessage.date + midnightOffset) / 86400);
+
+      if (curDay === prevDay) {
+        delete curMessage.needDate;
+      } else if (!i || prevMessage) {
+        curMessage.needDate = true;
+      }
+
+      if (prevMessage &&
+          curMessage.from_id == prevMessage.from_id &&
+          !prevMessage.fwd_from_id == !curMessage.fwd_from_id &&
+          !prevMessage.action &&
+          !curMessage.action &&
+          curMessage.date < prevMessage.date + 900) {
+
+        var singleLine = curMessage.message && curMessage.message.length < 70 && curMessage.message.indexOf("\n") == -1;
+        if (curMessage.fwd_from_id && curMessage.fwd_from_id == prevMessage.fwd_from_id) {
+          curMessage.grouped = singleLine ? 'im_grouped_fwd_short' : 'im_grouped_fwd';
+        } else {
+          curMessage.grouped = !curMessage.fwd_from_id && singleLine ? 'im_grouped_short' : 'im_grouped';
+        }
+        if (curMessage.fwd_from_id) {
+          if (!prevMessage.grouped) {
+            prevMessage.grouped = 'im_grouped_fwd_start';
+          }
+          if (curMessage.grouped && i == len - 1) {
+            curMessage.grouped += ' im_grouped_fwd_end';
+          }
+        }
+      } else if (prevMessage || !i) {
+        delete curMessage.grouped;
+
+        if (prevMessage && prevMessage.grouped && prevMessage.fwd_from_id) {
+          prevMessage.grouped += ' im_grouped_fwd_end';
+        }
+      }
+      prevMessage = curMessage;
+      prevDay = curDay;
+    }
   }
 
   function getDialogByPeerID (peerID) {
@@ -1721,6 +1890,7 @@ angular.module('myApp.services', [])
         case 'messageMediaPhoto': notificationMessage = 'Photo'; break;
         case 'messageMediaVideo': notificationMessage = 'Video'; break;
         case 'messageMediaDocument': notificationMessage = 'Document'; break;
+        case 'messageMediaAudio': notificationMessage = 'Voice message'; break;
         case 'messageMediaGeo': notificationMessage = 'Location'; break;
         case 'messageMediaContact': notificationMessage = 'Contact'; break;
         default: notificationMessage = 'Attachment'; break;
@@ -1793,11 +1963,19 @@ angular.module('myApp.services', [])
 
         if (historyStorage !== undefined) {
           var topMsgID = historiesStorage[peerID].history[0];
-          if (message.id <= topMsgID) {
+          if (historiesStorage[peerID].history.indexOf(message.id) != -1) {
             return false;
           }
+          else {
+            historyStorage.history.unshift(message.id);
+            if (message.id > 0 && message.id < topMsgID || true) {
+              historyStorage.history.sort(function (a, b) {
+                return b - a;
+              });
+            }
+          }
         } else {
-          historyStorage = historiesStorage[peerID] = {count: null, history: [], pending: []};
+          historyStorage = historiesStorage[peerID] = {count: null, history: [message.id], pending: []};
         }
 
         saveMessages([message]);
@@ -1806,10 +1984,8 @@ angular.module('myApp.services', [])
           historyStorage.count++;
         }
 
-        historyStorage.history.unshift(message.id);
         var randomID = pendingByMessageID[message.id],
             pendingMessage;
-
 
         if (randomID) {
           if (pendingMessage = finalizePendingMessage(randomID, message)) {
@@ -1818,7 +1994,6 @@ angular.module('myApp.services', [])
           delete pendingByMessageID[message.id];
         }
 
-        // console.log(11, randomID, pendingMessage);
         if (!pendingMessage) {
           $rootScope.$broadcast('history_append', {peerID: peerID, messageID: message.id});
         }
@@ -1846,7 +2021,9 @@ angular.module('myApp.services', [])
         $rootScope.$broadcast('dialogs_update', dialog);
 
 
-        if ($rootScope.idle.isIDLE && !message.out && message.unread) {
+        if ((Config.Navigator.mobile && $rootScope.selectedPeerID != peerID || $rootScope.idle.isIDLE) &&
+            !message.out &&
+            message.unread) {
           NotificationsManager.getPeerMuted(peerID).then(function (muted) {
             if (!message.unread || muted) {
               return;
@@ -1908,15 +2085,23 @@ angular.module('myApp.services', [])
             history.msgs[messageID] = true;
 
             if (messagesForHistory[messageID]) {
-              messagesForHistory[messageID].DELETED = true;
+              messagesForHistory[messageID].deleted = true;
               delete messagesForHistory[messageID];
             }
             if (messagesForDialogs[messageID]) {
-              messagesForDialogs[messageID].DELETED = true;
+              messagesForDialogs[messageID].deleted = true;
               delete messagesForDialogs[messageID];
             }
-            message.DELETED = true;
-            delete messagesStorage[messageID];
+            message.deleted = true;
+            messagesStorage[messageID] = {
+              deleted: true,
+              id: messageID,
+              from_id: message.from_id,
+              to_id: message.to_id,
+              out: message.out,
+              unread: message.unread,
+              date: message.date
+            };
           }
         }
 
@@ -1970,12 +2155,15 @@ angular.module('myApp.services', [])
     forwardMessages: forwardMessages,
     getMessagePeer: getMessagePeer,
     wrapForDialog: wrapForDialog,
-    wrapForHistory: wrapForHistory
+    wrapForHistory: wrapForHistory,
+    regroupWrappedHistory: regroupWrappedHistory
   }
 })
 
-.service('AppPhotosManager', function ($modal, $window, $rootScope, MtpApiFileManager, AppUsersManager) {
-  var photos = {};
+.service('AppPhotosManager', function ($modal, $window, $timeout, $rootScope, MtpApiManager, MtpApiFileManager, AppUsersManager, FileManager) {
+  var photos = {},
+      windowW = $(window).width(),
+      windowH = $(window).height();
 
   function savePhoto (apiPhoto) {
     photos[apiPhoto.id] = apiPhoto;
@@ -2008,35 +2196,25 @@ angular.module('myApp.services', [])
     return bestPhotoSize;
   }
 
-  function wrapForHistory (photoID) {
-    var photo = angular.copy(photos[photoID]) || {_: 'photoEmpty'},
-        width = 260,
-        height = 260,
-        thumbPhotoSize = choosePhotoSize(photo, width, height),
-        thumb = {
-          placeholder: 'img/placeholders/PhotoThumbConversation.gif',
-          width: width,
-          height: height
-        };
-
-    // console.log('chosen photo size', photoID, thumbPhotoSize);
-    if (thumbPhotoSize && thumbPhotoSize._ != 'photoSizeEmpty') {
-      if (thumbPhotoSize.w > thumbPhotoSize.h) {
-        thumb.height = parseInt(thumbPhotoSize.h * width / thumbPhotoSize.w);
-      } else {
-        thumb.width = parseInt(thumbPhotoSize.w * height / thumbPhotoSize.h);
+  function getUserPhotos (inputUser, maxID, limit) {
+    return MtpApiManager.invokeApi('photos.getUserPhotos', {
+      user_id: inputUser,
+      offset: 0,
+      limit: limit || 20,
+      max_id: maxID || 0
+    }).then(function (photosResult) {
+      AppUsersManager.saveApiUsers(photosResult.users);
+      var photoIDs = [];
+      for (var i = 0; i < photosResult.photos.length; i++) {
+        savePhoto(photosResult.photos[i]);
+        photoIDs.push(photosResult.photos[i].id)
       }
 
-      thumb.location = thumbPhotoSize.location;
-      thumb.size = thumbPhotoSize.size;
-    } else {
-      thumb.width = 100;
-      thumb.height = 100;
-    }
-
-    photo.thumb = thumb;
-
-    return photo;
+      return {
+        count: photosResult.count || photosResult.photos.length,
+        photos: photoIDs
+      };
+    });
   }
 
   function preloadPhoto (photoID) {
@@ -2064,9 +2242,49 @@ angular.module('myApp.services', [])
   };
   $rootScope.preloadPhoto = preloadPhoto;
 
+  function getPhoto (photoID) {
+    return photos[photoID] || {_: 'photoEmpty'};
+  }
+
+  function wrapForHistory (photoID) {
+    var photo = angular.copy(photos[photoID]) || {_: 'photoEmpty'},
+        width = Math.min(windowW - 80, 260),
+        height = Math.min(windowH - 100, 260),
+        thumbPhotoSize = choosePhotoSize(photo, width, height),
+        thumb = {
+          placeholder: 'img/placeholders/PhotoThumbConversation.gif',
+          width: width,
+          height: height
+        };
+
+    // console.log('chosen photo size', photoID, thumbPhotoSize);
+    if (thumbPhotoSize && thumbPhotoSize._ != 'photoSizeEmpty') {
+      if ((thumbPhotoSize.w / thumbPhotoSize.h) > (width / height)) {
+        thumb.height = parseInt(thumbPhotoSize.h * width / thumbPhotoSize.w);
+      }
+      else {
+        thumb.width = parseInt(thumbPhotoSize.w * height / thumbPhotoSize.h);
+        if (thumb.width > width) {
+          thumb.height = parseInt(thumb.height * width / thumb.width);
+          thumb.width = width;
+        }
+      }
+
+      thumb.location = thumbPhotoSize.location;
+      thumb.size = thumbPhotoSize.size;
+    } else {
+      thumb.width = 100;
+      thumb.height = 100;
+    }
+
+    photo.thumb = thumb;
+
+    return photo;
+  }
+
   function wrapForFull (photoID) {
     var photo = wrapForHistory(photoID),
-        fullWidth = $(window).width() - 36,
+        fullWidth = $(window).width() - (Config.Navigator.mobile ? 20 : 36),
         fullHeight = $($window).height() - 150,
         fullPhotoSize = choosePhotoSize(photo, fullWidth, fullHeight),
         full = {
@@ -2092,7 +2310,7 @@ angular.module('myApp.services', [])
         }
       }
 
-      if (full.width >= fullPhotoSize.w && full.height >= fullPhotoSize.h) {
+      if (!Config.Navigator.mobile && full.width >= fullPhotoSize.w && full.height >= fullPhotoSize.h) {
         full.width = fullPhotoSize.w;
         full.height = fullPhotoSize.h;
       }
@@ -2109,18 +2327,63 @@ angular.module('myApp.services', [])
     return photo;
   }
 
-  function openPhoto (photoID, messageID) {
+  function openPhoto (photoID, peerListID) {
+    if (!photoID || photoID === '0') {
+      return false;
+    }
+
     var scope = $rootScope.$new(true);
+
     scope.photoID = photoID;
-    scope.messageID = messageID;
+    if (peerListID < 0) {
+      scope.userID = -peerListID;
+    } else{
+      scope.messageID = peerListID;
+    }
 
     var modalInstance = $modal.open({
       templateUrl: 'partials/photo_modal.html',
-      controller: 'PhotoModalController',
+      controller: scope.userID ? 'UserpicModalController' : 'PhotoModalController',
       scope: scope,
       windowClass: 'photo_modal_window'
     });
   }
+
+  function downloadPhoto (photoID) {
+    var photo = photos[photoID],
+        ext = 'jpg',
+        mimeType = 'image/jpeg',
+        fileName = 'photo' + photoID + '.' + ext,
+        fullWidth = $(window).width() - 36,
+        fullHeight = $($window).height() - 150,
+        fullPhotoSize = choosePhotoSize(photo, fullWidth, fullHeight),
+        inputFileLocation = {
+          _: 'inputFileLocation',
+          volume_id: fullPhotoSize.location.volume_id,
+          local_id: fullPhotoSize.location.local_id,
+          secret: fullPhotoSize.location.secret
+        };
+
+    FileManager.chooseSave(fileName, ext, mimeType).then(function (writableFileEntry) {
+      MtpApiFileManager.downloadFile(
+        fullPhotoSize.location.dc_id, inputFileLocation, fullPhotoSize.size, {
+        mime: mimeType,
+        toFileEntry: writableFileEntry
+      }).then(function (url) {
+        console.log('file save done');
+      }, function (e) {
+        console.log('photo download failed', e);
+      });
+    }, function () {
+      MtpApiFileManager.downloadFile(
+        fullPhotoSize.location.dc_id, inputFileLocation, fullPhotoSize.size, {mime: mimeType}
+      ).then(function (url) {
+        FileManager.download(url, mimeType, fileName);
+      }, function (e) {
+        console.log('photo download failed', e);
+      });
+    });
+  };
 
   $rootScope.openPhoto = openPhoto;
 
@@ -2128,16 +2391,21 @@ angular.module('myApp.services', [])
   return {
     savePhoto: savePhoto,
     preloadPhoto: preloadPhoto,
+    getUserPhotos: getUserPhotos,
+    getPhoto: getPhoto,
     wrapForHistory: wrapForHistory,
     wrapForFull: wrapForFull,
-    openPhoto: openPhoto
+    openPhoto: openPhoto,
+    downloadPhoto: downloadPhoto
   }
 })
 
 
-.service('AppVideoManager', function ($rootScope, $modal, $window, $timeout, MtpApiFileManager, AppUsersManager) {
-  var videos = {};
-  var videosForHistory = {};
+.service('AppVideoManager', function ($rootScope, $modal, $window, $timeout, MtpApiFileManager, AppUsersManager, FileManager) {
+  var videos = {},
+      videosForHistory = {},
+      windowW = $(window).width(),
+      windowH = $(window).height();
 
   function saveVideo (apiVideo) {
     videos[apiVideo.id] = apiVideo;
@@ -2158,8 +2426,8 @@ angular.module('myApp.services', [])
     }
 
     var video = angular.copy(videos[videoID]),
-        width = 200,
-        height = 200,
+        width = Math.min(windowW - 80, windowW <= 479 ? 260 : 200),
+        height = Math.min(windowH - 100, windowW <= 479 ? 260 : 200),
         thumbPhotoSize = video.thumb,
         thumb = {
           placeholder: 'img/placeholders/VideoThumbConversation.gif',
@@ -2168,10 +2436,15 @@ angular.module('myApp.services', [])
         };
 
     if (thumbPhotoSize && thumbPhotoSize._ != 'photoSizeEmpty') {
-      if (thumbPhotoSize.w > thumbPhotoSize.h) {
+      if ((thumbPhotoSize.w / thumbPhotoSize.h) > (width / height)) {
         thumb.height = parseInt(thumbPhotoSize.h * width / thumbPhotoSize.w);
-      } else {
+      }
+      else {
         thumb.width = parseInt(thumbPhotoSize.w * height / thumbPhotoSize.h);
+        if (thumb.width > width) {
+          thumb.height = parseInt(thumb.height * width / thumb.width);
+          thumb.width = width;
+        }
       }
 
       thumb.location = thumbPhotoSize.location;
@@ -2226,7 +2499,8 @@ angular.module('myApp.services', [])
     var modalInstance = $modal.open({
       templateUrl: 'partials/video_modal.html',
       controller: 'VideoModalController',
-      scope: scope
+      scope: scope,
+      windowClass: 'video_modal_window'
     });
   }
 
@@ -2252,29 +2526,22 @@ angular.module('myApp.services', [])
         mimeType = 'video/mpeg4',
         fileName = 'video' + videoID + '.' + ext;
 
-    if (window.chrome && chrome.fileSystem && chrome.fileSystem.chooseEntry) {
-
-      chrome.fileSystem.chooseEntry({
-        type: 'saveFile',
-        suggestedName: fileName,
-        accepts: [{
-          mimeTypes: [mimeType],
-          extensions: [ext]
-        }]
-      }, function (writableFileEntry) {
-        var downloadPromise = MtpApiFileManager.downloadFile(video.dc_id, inputFileLocation, video.size, writableFileEntry, {mime: mimeType});
-        downloadPromise.then(function (url) {
-          delete historyVideo.progress;
-          console.log('file save done');
-        }, function (e) {
-          console.log('video download failed', e);
-          historyVideo.progress.enabled = false;
-        }, updateDownloadProgress);
-
-        historyVideo.progress.cancel = downloadPromise.cancel;
+    FileManager.chooseSave(fileName, ext, mimeType).then(function (writableFileEntry) {
+      var downloadPromise = MtpApiFileManager.downloadFile(video.dc_id, inputFileLocation, video.size, {
+        mime: mimeType,
+        toFileEntry: writableFileEntry
       });
-    } else {
-      var downloadPromise = MtpApiFileManager.downloadFile(video.dc_id, inputFileLocation, video.size, null, {mime: mimeType});
+      downloadPromise.then(function (url) {
+        delete historyVideo.progress;
+        console.log('file save done');
+      }, function (e) {
+        console.log('video download failed', e);
+        historyVideo.progress.enabled = false;
+      }, updateDownloadProgress);
+
+      historyVideo.progress.cancel = downloadPromise.cancel;
+    }, function () {
+      var downloadPromise = MtpApiFileManager.downloadFile(video.dc_id, inputFileLocation, video.size, {mime: mimeType});
 
       downloadPromise.then(function (url) {
         delete historyVideo.progress;
@@ -2284,25 +2551,14 @@ angular.module('myApp.services', [])
           return
         }
 
-        var a = $('<a>Download</a>')
-                  .css({position: 'absolute', top: 1, left: 1})
-                  .attr('href', url)
-                  .attr('target', '_blank')
-                  .attr('download', fileName)
-                  .appendTo('body');
-
-        a[0].dataset.downloadurl = [mimeType, fileName, url].join(':');
-        a[0].click();
-        $timeout(function () {
-          a.remove();
-        }, 100);
+        FileManager.download(url, mimeType, fileName);
       }, function (e) {
         console.log('video download failed', e);
         historyVideo.progress.enabled = false;
       }, updateDownloadProgress);
 
       historyVideo.progress.cancel = downloadPromise.cancel;
-    }
+    });
   };
 
   $rootScope.openVideo = openVideo;
@@ -2316,9 +2572,11 @@ angular.module('myApp.services', [])
   }
 })
 
-.service('AppDocsManager', function ($rootScope, $modal, $window, $timeout, MtpApiFileManager) {
-  var docs = {};
-  var docsForHistory = {};
+.service('AppDocsManager', function ($rootScope, $modal, $window, $timeout, MtpApiFileManager, FileManager) {
+  var docs = {},
+      docsForHistory = {},
+      windowW = $(window).width(),
+      windowH = $(window).height();
 
   function saveDoc (apiDoc) {
     docs[apiDoc.id] = apiDoc;
@@ -2340,20 +2598,25 @@ angular.module('myApp.services', [])
 
     var doc = angular.copy(docs[docID]),
         isGif = doc.mime_type == 'image/gif',
-        width = isGif ? 260 : 100,
-        height = isGif ? 260 : 100,
+        width = isGif ? Math.min(windowW - 80, 260) : 100,
+        height = isGif ? Math.min(windowH - 100, 260) : 100,
         thumbPhotoSize = doc.thumb,
         thumb = {
-          // placeholder: 'img/placeholders/DocThumbConversation.jpg',
           width: width,
           height: height
         };
 
+
     if (thumbPhotoSize && thumbPhotoSize._ != 'photoSizeEmpty') {
-      if (thumbPhotoSize.w > thumbPhotoSize.h) {
+      if ((thumbPhotoSize.w / thumbPhotoSize.h) > (width / height)) {
         thumb.height = parseInt(thumbPhotoSize.h * width / thumbPhotoSize.w);
-      } else {
+      }
+      else {
         thumb.width = parseInt(thumbPhotoSize.w * height / thumbPhotoSize.h);
+        if (thumb.width > width) {
+          thumb.height = parseInt(thumb.height * width / thumb.width);
+          thumb.width = width;
+        }
       }
 
       thumb.location = thumbPhotoSize.location;
@@ -2364,9 +2627,9 @@ angular.module('myApp.services', [])
     doc.thumb = thumb;
 
     doc.canDownload = !(window.chrome && chrome.fileSystem && chrome.fileSystem.chooseEntry);
-    doc.withPreview = doc.canDownload && doc.mime_type.match(/^(image\/|application\/pdf)/) ? 1 : 0;
+    doc.withPreview = doc.canDownload && doc.thumb && doc.mime_type.match(/^(image\/|application\/pdf)/) ? 1 : 0;
 
-    if (isGif) {
+    if (doc.withPreview && isGif) {
       doc.isSpecial = 'gif';
     }
 
@@ -2391,32 +2654,24 @@ angular.module('myApp.services', [])
       $rootScope.$broadcast('history_update');
     }
 
-
-    if (window.chrome && chrome.fileSystem && chrome.fileSystem.chooseEntry) {
-      var ext = (doc.file_name.split('.', 2) || [])[1] || '';
-
-      chrome.fileSystem.chooseEntry({
-        type: 'saveFile',
-        suggestedName: doc.file_name,
-        accepts: [{
-          mimeTypes: [doc.mime_type],
-          extensions: [ext]
-        }]
-      }, function (writableFileEntry) {
-        var downloadPromise = MtpApiFileManager.downloadFile(doc.dc_id, inputFileLocation, doc.size, writableFileEntry, {mime: doc.mime_type});
-
-        downloadPromise.then(function (url) {
-          delete historyDoc.progress;
-          console.log('file save done');
-        }, function (e) {
-          console.log('document download failed', e);
-          historyDoc.progress.enabled = false;
-        }, updateDownloadProgress);
-
-        historyDoc.progress.cancel = downloadPromise.cancel;
+    var ext = (doc.file_name.split('.', 2) || [])[1] || '';
+    FileManager.chooseSave(doc.file_name, ext, doc.mime_type).then(function (writableFileEntry) {
+      var downloadPromise = MtpApiFileManager.downloadFile(doc.dc_id, inputFileLocation, doc.size, {
+        mime: doc.mime_type,
+        toFileEntry: writableFileEntry
       });
-    } else {
-      var downloadPromise = MtpApiFileManager.downloadFile(doc.dc_id, inputFileLocation, doc.size, null, {mime: doc.mime_type});
+
+      downloadPromise.then(function (url) {
+        delete historyDoc.progress;
+        console.log('file save done');
+      }, function (e) {
+        console.log('document download failed', e);
+        historyDoc.progress.enabled = false;
+      }, updateDownloadProgress);
+
+      historyDoc.progress.cancel = downloadPromise.cancel;
+    }, function () {
+      var downloadPromise = MtpApiFileManager.downloadFile(doc.dc_id, inputFileLocation, doc.size, {mime: doc.mime_type});
 
       downloadPromise.then(function (url) {
         delete historyDoc.progress;
@@ -2426,20 +2681,10 @@ angular.module('myApp.services', [])
         switch (action) {
           case 1:
             window.open(url, '_blank');
+            break;
 
           default:
-            var a = $('<a>Download</a>')
-                      .css({position: 'absolute', top: 1, left: 1})
-                      .attr('href', url)
-                      .attr('target', '_blank')
-                      .attr('download', doc.file_name)
-                      .appendTo('body');
-
-            a[0].dataset.downloadurl = [doc.mime_type, doc.file_name, url].join(':');
-            a[0].click();
-            $timeout(function () {
-              a.remove();
-            }, 100);
+            FileManager.download(url, doc.mime_type, doc.file_name);
         }
       }, function (e) {
         console.log('document download failed', e);
@@ -2447,7 +2692,7 @@ angular.module('myApp.services', [])
       }, updateDownloadProgress);
 
       historyDoc.progress.cancel = downloadPromise.cancel;
-    }
+    });
   }
 
   $rootScope.downloadDoc = downloadDoc;
@@ -2495,7 +2740,7 @@ angular.module('myApp.services', [])
       $rootScope.$broadcast('history_update');
     }
 
-    var downloadPromise = MtpApiFileManager.downloadFile(audio.dc_id, inputFileLocation, audio.size, null, {mime: 'audio/mpeg'});
+    var downloadPromise = MtpApiFileManager.downloadFile(audio.dc_id, inputFileLocation, audio.size, {mime: 'audio/ogg'});
 
     downloadPromise.then(function (url) {
       delete historyAudio.progress;
@@ -2546,15 +2791,32 @@ angular.module('myApp.services', [])
 
 .service('ApiUpdatesManager', function ($rootScope, MtpNetworkerFactory, AppUsersManager, AppChatsManager, AppPeersManager, MtpApiManager) {
 
-  var curState = {invalid: true};
+  var isSynchronizing = true,
+      getDifferencePending = false,
+      curState = {},
+      pendingUpdates = {};
+
+  function popPendingUpdate () {
+    var nextSeq = curState.seq + 1,
+        updateMessage = pendingUpdates[nextSeq];
+    if (updateMessage) {
+      console.log(dT(), 'pop pending update', nextSeq, updateMessage);
+      if (processUpdateMessage(updateMessage)) {
+        delete pendingUpdates[nextSeq];
+      }
+    }
+  }
+
+  function forceGetDifference () {
+    if (!isSynchronizing) {
+      getDifference();
+    }
+  }
 
   function processUpdateMessage (updateMessage) {
-    if (curState.invalid) {
-      return false;
-    }
-
     if (updateMessage.seq) {
       if (!saveSeq(updateMessage.seq, updateMessage.seq_start)) {
+        pendingUpdates[updateMessage.seq_start || updateMessage.seq] = updateMessage;
         return false;
       }
       if (updateMessage.date) {
@@ -2565,47 +2827,18 @@ angular.module('myApp.services', [])
 
     switch (updateMessage._) {
       case 'updatesTooLong':
-        getDifference();
+        forceGetDifference();
         break;
 
       case 'updateShort':
         saveUpdate(updateMessage.update);
         break;
 
-      case 'updatesCombined':
-      case 'updates':
-        AppUsersManager.saveApiUsers(updateMessage.users);
-        AppChatsManager.saveApiChats(updateMessage.chats);
-
-        var i, update, message;
-        for (var i = 0; i < updateMessage.updates.length; i++) {
-          update = updateMessage.updates[i];
-          switch (update._) {
-            case 'updateNewMessage':
-              message = update.message;
-              if (message.from_id && !AppUsersManager.hasUser(message.from_id)) {
-                console.log('User not found', message.from_id, 'getDiff');
-                getDifference();
-                return false;
-              }
-              if (message.to_id.chat_id && !AppChatsManager.hasChat(message.to_id.chat_id)) {
-                console.log('Chat not found', message.to_id.chat_id, 'getDiff');
-                getDifference();
-                return false;
-              }
-              break;
-          }
-        }
-
-        angular.forEach(updateMessage.updates, function (update) {
-          saveUpdate(update);
-        });
-        break;
 
       case 'updateShortMessage':
         if (!AppUsersManager.hasUser(updateMessage.from_id)) {
           console.log('User not found', updateMessage.from_id, 'getDiff');
-          getDifference();
+          forceGetDifference();
           break;
         }
         saveUpdate({
@@ -2629,7 +2862,7 @@ angular.module('myApp.services', [])
         if (!AppUsersManager.hasUser(updateMessage.from_id) ||
             !AppChatsManager.hasChat(updateMessage.chat_id)) {
           console.log('User or chat not found', updateMessage.from_id, updateMessage.chat_id, 'getDiff');
-          getDifference();
+          forceGetDifference();
           break;
         }
         saveUpdate({
@@ -2648,22 +2881,67 @@ angular.module('myApp.services', [])
           pts: updateMessage.pts
         });
         break;
+
+      case 'updatesCombined':
+      case 'updates':
+        AppUsersManager.saveApiUsers(updateMessage.users);
+        AppChatsManager.saveApiChats(updateMessage.chats);
+
+        var i, update, message;
+        for (var i = 0; i < updateMessage.updates.length; i++) {
+          update = updateMessage.updates[i];
+          switch (update._) {
+            case 'updateNewMessage':
+              message = update.message;
+              if (message.from_id && !AppUsersManager.hasUser(message.from_id)) {
+                console.log('User not found', message.from_id, 'getDiff');
+                forceGetDifference();
+                return false;
+              }
+              if (message.to_id.chat_id && !AppChatsManager.hasChat(message.to_id.chat_id)) {
+                console.log('Chat not found', message.to_id.chat_id, 'getDiff');
+                forceGetDifference();
+                return false;
+              }
+              break;
+          }
+        }
+
+        angular.forEach(updateMessage.updates, function (update) {
+          saveUpdate(update);
+        });
+        break;
+
+      default:
+        console.warn(dT(), 'Unknown update message', updateMessage);
+    }
+
+    popPendingUpdate();
+
+    if (getDifferencePending && curState.seq >= getDifferencePending.seqAwaiting) {
+      console.log(dT(), 'cancel pending getDiff', getDifferencePending.seqAwaiting);
+      clearTimeout(getDifferencePending.timeout);
+      getDifferencePending = false;
     }
 
     return true;
   }
 
-  function getDifference (force) {
-    if (curState.invalid && !force) {
-      return false;
+  function getDifference () {
+    isSynchronizing = true;
+
+    if (getDifferencePending) {
+      clearTimeout(getDifferencePending.timeout);
+      getDifferencePending = false;
     }
 
-    curState.invalid = true;
     MtpApiManager.invokeApi('updates.getDifference', {pts: curState.pts, date: curState.date, qts: 0}).then(function (differenceResult) {
       if (differenceResult._ == 'updates.differenceEmpty') {
+        console.log(dT(), 'apply empty diff', differenceResult.seq);
         curState.date = differenceResult.date;
         curState.seq = differenceResult.seq;
-        delete curState.invalid;
+        isSynchronizing = false;
+        popPendingUpdate();
         return false;
       }
 
@@ -2672,7 +2950,7 @@ angular.module('myApp.services', [])
 
       // Should be first because of updateMessageID
       angular.forEach(differenceResult.other_updates, function(update){
-        saveUpdate(update, true);
+        saveUpdate(update);
       });
 
       angular.forEach(differenceResult.new_messages, function (apiMessage) {
@@ -2680,7 +2958,7 @@ angular.module('myApp.services', [])
           _: 'updateNewMessage',
           message: apiMessage,
           pts: curState.pts
-        }, true);
+        });
       });
 
       var nextState = differenceResult.intermediate_state || differenceResult.state;
@@ -2688,18 +2966,17 @@ angular.module('myApp.services', [])
       curState.pts = nextState.pts;
       curState.date = nextState.date;
 
+      console.log(dT(), 'apply diff', curState.seq, curState.pts);
+
       if (differenceResult._ == 'updates.differenceSlice') {
         getDifference(true);
       } else {
-        delete curState.invalid;
+        isSynchronizing = false;
       }
     });
   }
 
-  function saveUpdate (update, force) {
-    if (curState.invalid && !force) {
-      return false;
-    }
+  function saveUpdate (update) {
     if (update.pts) {
       curState.pts = update.pts;
     }
@@ -2707,25 +2984,35 @@ angular.module('myApp.services', [])
     $rootScope.$broadcast('apiUpdate', update);
   }
 
+
+
   function saveSeq (seq, seqStart) {
-    // console.log('saving seq', curState.invalid, seq, seqStart, curState.seq);
-
-    if (curState.invalid) {
-      return false;
-    }
-
     seqStart = seqStart || seq;
 
     if (!seqStart) {
       return true;
     }
 
+    if (isSynchronizing) {
+      console.log(dT(), 'Seq decline', seqStart);
+      return false;
+    }
+
     if (seqStart != curState.seq + 1) {
       if (seqStart > curState.seq) {
-        console.warn('Seq hole', seqStart, curState.seq);
-        getDifference();
+        console.warn(dT(), 'Seq hole', seqStart, getDifferencePending && getDifferencePending.seqAwaiting);
+        if (!getDifferencePending) {
+          getDifferencePending = {
+            seqAwaiting: seqStart,
+            timeout: setTimeout(function () {
+              getDifference();
+            }, 5000)
+          };
+        }
       }
       return false;
+    } else {
+      // console.log(dT(), 'Seq apply', seqStart);
     }
 
     curState.seq = seq;
@@ -2739,14 +3026,13 @@ angular.module('myApp.services', [])
       curState.seq = stateResult.seq;
       curState.pts = stateResult.pts;
       curState.date = stateResult.date;
-      delete curState.invalid;
+      isSynchronizing = false;
     })
   }
 
 
   return {
-    saveUpdate: saveUpdate,
-    saveSeq: saveSeq,
+    processUpdateMessage: processUpdateMessage,
     attach: attach
   }
 })
@@ -2764,7 +3050,7 @@ angular.module('myApp.services', [])
     emojiMap[emojiData[emojiCode][0]] = emojiCode;
   }
 
-  var regExp = new RegExp('((?:(ftp|https?)://|(?:mailto:)?([A-Za-z0-9._%+-]+@))(\\S*\\.\\S*[^\\s.;,(){}<>"\']))|(\\n)|(' + emojiUtf.join('|') + ')', 'i');
+  var regExp = new RegExp('((?:(ftp|https?)://|(?:mailto:)?([A-Za-z0-9._%+-]+@))(\\S*\\.\\S*[^\\s.;,(){}<>"\']))|(\\n)|(' + emojiUtf.join('|') + ')|(^|\\s)(#[A-Za-z0-9\_\.]{4,20})', 'i');
   var youtubeRegex = /(?:https?:\/\/)?(?:www\.)?youtu(?:|.be|be.com|.b)(?:\/v\/|\/watch\\?v=|e\/|\/watch(?:.+)v=)(.{11})(?:\&[^\s]*)?/;
 
   return {
@@ -2869,6 +3155,23 @@ angular.module('myApp.services', [])
           html.push(encodeEntities(match[6]));
         }
       }
+      else if (match[8]) {
+        if (!options.noLinks) {
+          html.push(
+            match[7],
+            '<a href="#/im?q=',
+            encodeURIComponent(match[8]),
+            '">',
+            encodeEntities(match[8]),
+            '</a>'
+          );
+        } else {
+          html.push(
+            match[7],
+            encodeEntities(match[8])
+          );
+        }
+      }
       raw = raw.substr(match.index + match[0].length);
     }
 
@@ -2889,9 +3192,10 @@ angular.module('myApp.services', [])
           videoID = youtubeMatches && youtubeMatches[1];
 
       if (videoID) {
-        text = text + '<div class="im_message_iframe_video"><iframe type="text/html" frameborder="0" ' +
+        var tag = Config.Modes.chrome_packed ? 'webview' : 'iframe';
+        text = text + '<div class="im_message_iframe_video"><' + tag + ' type="text/html" frameborder="0" ' +
               'src="http://www.youtube.com/embed/' + videoID +
-              '?autoplay=0&amp;controls=2"></iframe></div>'
+              '?autoplay=0&amp;controls=2"></' + tag + '></div>'
       }
     }
 
@@ -2915,6 +3219,10 @@ angular.module('myApp.services', [])
     if (!started) {
       started = true;
       $($window).on('blur focus keydown mousedown touchstart', onEvent);
+
+      setTimeout(function () {
+        onEvent({type: 'blur'});
+      }, 0);
     }
   }
 
@@ -2991,11 +3299,10 @@ angular.module('myApp.services', [])
 
 })
 
-.service('NotificationsManager', function ($rootScope, $window, $timeout, $interval, $q, MtpApiManager, AppPeersManager, IdleManager, AppConfigManager) {
+.service('NotificationsManager', function ($rootScope, $window, $timeout, $interval, $q, MtpApiManager, AppPeersManager, IdleManager, Storage) {
 
-  var notificationsUiSupport = 'Notification' in window;
+  var notificationsUiSupport = ('Notification' in window) || ('mozNotification' in navigator);
   var notificationsShown = {};
-  // var lastClosed = [];
   var notificationIndex = 0;
   var notificationsCount = 0;
   var peerSettings = {};
@@ -3021,7 +3328,10 @@ angular.module('myApp.services', [])
         var time = tsNow();
         if (!notificationsCount || time % 2000 > 1000) {
           document.title = titleBackup;
-          $('link[rel="icon"]').replaceWith(faviconBackupEl);
+          var curFav = $('link[rel="icon"]');
+          if (curFav.attr('href').indexOf('favicon_unread') != -1) {
+            curFav.replaceWith(faviconBackupEl);
+          }
         } else {
           document.title = notificationsCount > 1
             ? (notificationsCount + ' notifications')
@@ -3045,6 +3355,20 @@ angular.module('myApp.services', [])
     }
   });
 
+  var registeredDevice = false;
+  if (window.navigator.mozSetMessageHandler) {
+    window.navigator.mozSetMessageHandler('push', function(e) {
+      console.log(dT(), 'received push', e);
+      $rootScope.$broadcast('push_received');
+    });
+
+    window.navigator.mozSetMessageHandler('push-register', function(e) {
+      console.log(dT(), 'received push', e);
+      registeredDevice = false;
+      registerDevice();
+    });
+  }
+
   return {
     start: start,
     notify: notify,
@@ -3053,7 +3377,8 @@ angular.module('myApp.services', [])
     getPeerSettings: getPeerSettings,
     getPeerMuted: getPeerMuted,
     savePeerSettings: savePeerSettings,
-    updatePeerSettings: updatePeerSettings
+    updatePeerSettings: updatePeerSettings,
+    testSound: playSound
   };
 
   function getPeerSettings (peerID) {
@@ -3097,11 +3422,12 @@ angular.module('myApp.services', [])
   }
 
   function start () {
+    registerDevice();
     if (!notificationsUiSupport) {
       return false;
     }
 
-    if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+    if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
       $($window).on('click', requestPermission);
     }
 
@@ -3122,38 +3448,59 @@ angular.module('myApp.services', [])
       return false;
     }
 
+    // FFOS Notification blob src bug workaround
+    if (Config.Navigator.ffos) {
+      data.image = 'https://raw.githubusercontent.com/zhukov/webogram/master/app/img/icons/icon60.png';
+    }
+
     notificationsCount++;
 
     if (!notificationsUiSupport ||
-        Notification.permission !== 'granted') {
+        'Notification' in window && Notification.permission !== 'granted') {
       return false;
     }
 
-    AppConfigManager.get('notify_nosound').then(function (noSound) {
-      if (!noSound) {
-        playSound();
+    Storage.get('notify_nosound', 'notify_volume').then(function (settings) {
+      if (!settings[0] && settings[1] === false || settings[1] > 0) {
+        playSound(settings[1] || 0.5);
       }
     })
 
-    AppConfigManager.get('notify_nodesktop').then(function (noShow) {
+    Storage.get('notify_nodesktop').then(function (noShow) {
       if (noShow) {
         return;
       }
       var idx = ++notificationIndex,
-          key = data.key || 'k' + idx;
+          key = data.key || 'k' + idx,
+          notification;
 
-      var notification = new Notification(data.title, {
-        icon: data.image || '',
-        body: data.message || '',
-        tag: data.tag || ''
-      });
+      if ('Notification' in window) {
+        notification = new Notification(data.title, {
+          icon: data.image || '',
+          body: data.message || '',
+          tag: data.tag || ''
+        });
+      }
+      else if ('mozNotification' in navigator) {
+        notification = navigator.mozNotification.createNotification(data.title, data.message || '', data.image || '');
+      }
+      else {
+        return;
+      }
 
       notification.onclick = function () {
         notification.close();
-        if (window.chrome && chrome.app && chrome.app.window) {
-          chrome.app.window.current().focus();
+        if (window.navigator.mozApps && document.hidden) {
+          // Get app instance and launch it to bring app to foreground
+          window.navigator.mozApps.getSelf().onsuccess = function() {
+            this.result.launch();
+          };
+        } else {
+          if (window.chrome && chrome.app && chrome.app.window) {
+            chrome.app.window.current().focus();
+          }
+          window.focus();
         }
-        window.focus();
         notificationsClear();
         if (data.onclick) {
           data.onclick();
@@ -3162,7 +3509,6 @@ angular.module('myApp.services', [])
 
       notification.onclose = function () {
         delete notificationsShown[key];
-        // lastClosed.push(tsNow());
         notificationsClear();
       };
 
@@ -3170,9 +3516,13 @@ angular.module('myApp.services', [])
     });
   };
 
-  function playSound () {
+  function playSound (volume) {
     var filename = 'img/sound_a.wav';
-    $('#notify_sound').html('<audio autoplay="autoplay"><source src="' + filename + '" type="audio/mpeg" /><embed hidden="true" autostart="true" loop="false" src="' + filename +'" /></audio>');
+    var obj = $('#notify_sound').html('<audio autoplay="autoplay">' +
+        '<source src="' + filename + '" type="audio/mpeg" />' +
+        '<embed hidden="true" autostart="true" loop="false" volume="' + (volume * 100) +'" src="' + filename +'" />' +
+        '</audio>');
+    obj.find('audio')[0].volume = volume;
   }
 
   function notificationCancel (key) {
@@ -3196,6 +3546,45 @@ angular.module('myApp.services', [])
     });
     notificationsShown = {};
   }
+
+  function registerDevice () {
+    if (registeredDevice) {
+      return false;
+    }
+    if (navigator.push && Config.Navigator.ffos && Config.Modes.packed) {
+      var req = navigator.push.register();
+
+      req.onsuccess = function(e) {
+        registeredDevice = req.result;
+        MtpApiManager.invokeApi('account.registerDevice', {
+          token_type: 4,
+          token: registeredDevice,
+          device_model: navigator.userAgent || 'Unknown UserAgent',
+          system_version: navigator.platform  || 'Unknown Platform',
+          app_version: Config.App.version,
+          app_sandbox: false,
+          lang_code: navigator.language || 'en'
+        });
+      }
+
+      req.onerror = function(e) {
+        console.error('Push register error', e);
+      }
+    }
+  }
+
+  function unregisterDevice () {
+    if (!registeredDevice) {
+      return false;
+    }
+    MtpApiManager.invokeApi('account.unregisterDevice', {
+      token_type: 4,
+      token: registeredDevice
+    }).then(function () {
+      registeredDevice = false;
+    })
+  }
+
 })
 
 
@@ -3270,15 +3659,25 @@ angular.module('myApp.services', [])
 
 .service('PeersSelectService', function ($rootScope, $modal) {
 
-  function selectPeer () {
+  function selectPeer (options) {
     var scope = $rootScope.$new();
-    // angular.extend(scope, params);
+    if (options) {
+      angular.extend(scope, options);
+    }
+
+    var tUrl = 'partials/peer_select.html',
+        className = 'peer_select_window page_modal';
+
+    if (Config.Navigator.mobile) {
+      tUrl = 'partials/mobile/peer_select.html';
+      className += ' mobile_modal';
+    }
 
     return $modal.open({
-      templateUrl: 'partials/peer_select.html',
+      templateUrl: tUrl,
       controller: 'PeerSelectController',
       scope: scope,
-      windowClass: 'peer_select_window'
+      windowClass: className
     }).result;
   }
 
@@ -3297,12 +3696,23 @@ angular.module('myApp.services', [])
     var scope = $rootScope.$new();
     scope.multiSelect = multiSelect;
     angular.extend(scope, options);
+    if (!scope.action && multiSelect) {
+      scope.action = 'select';
+    }
+
+    var tUrl = 'partials/contacts_modal.html',
+        className = 'contacts_modal_window page_modal';
+
+    if (Config.Navigator.mobile) {
+      tUrl = 'partials/mobile/contacts_modal.html';
+      className += ' mobile_modal';
+    }
 
     return $modal.open({
-      templateUrl: 'partials/contacts_modal.html',
+      templateUrl: tUrl,
       controller: 'ContactsModalController',
       scope: scope,
-      windowClass: 'contacts_modal_window'
+      windowClass: className
     }).result;
   }
 
@@ -3314,5 +3724,71 @@ angular.module('myApp.services', [])
     selectContact: function (options) {
       return select (false, options);
     },
+  }
+})
+
+
+.service('ChangelogNotifyService', function (Storage, $rootScope, $http, $modal) {
+
+  function versionCompare (ver1, ver2) {
+    if (typeof ver1 !== 'string') {
+      ver1 = '';
+    }
+    if (typeof ver2 !== 'string') {
+      ver2 = '';
+    }
+    // console.log('ss', ver1, ver2);
+    ver1 = ver1.replace(/^\s+|\s+$/g, '').split('.');
+    ver2 = ver2.replace(/^\s+|\s+$/g, '').split('.');
+
+    var a = Math.max(ver1.length, ver2.length), i;
+
+    for (i = 0; i < a; i++) {
+      if (ver1[i] == ver2[i]) {
+        continue;
+      }
+      if (ver1[i] > ver2[i]) {
+        return 1;
+      } else {
+        return -1;
+      }
+    }
+
+    return 0;
+  }
+
+  function checkUpdate () {
+    Storage.get('last_version').then(function (lastVersion) {
+      if (lastVersion != Config.App.version) {
+        if (lastVersion) {
+          showChangelog(lastVersion);
+        }
+        Storage.set({last_version: Config.App.version});
+      }
+    })
+  }
+
+  function showChangelog (lastVersion) {
+    var $scope = $rootScope.$new();
+
+    $scope.lastVersion = lastVersion;
+    $scope.canShowVersion = function (curVersion) {
+      if ($scope.lastVersion === false || $scope.lastVersion === undefined) {
+        return true;
+      }
+
+      return versionCompare(curVersion, lastVersion) >= 0;
+    };
+
+    $modal.open({
+      templateUrl: 'partials/changelog_modal.html',
+      scope: $scope,
+      windowClass: 'changelog_modal_window page_modal'
+    });
+  }
+
+  return {
+    checkUpdate: checkUpdate,
+    showChangelog: showChangelog
   }
 })

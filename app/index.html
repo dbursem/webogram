@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en" ng-app="myApp" manifest="app.manifest"><!--  ng-csp=""  -->
+<html lang="en" ng-app="myApp" manifest="webogram.appcache" ng-csp="">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Webogram</title>
 
   <!-- build:css css/app.css -->
@@ -10,9 +10,20 @@
   <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.css"/>
   <link rel="stylesheet" href="vendor/jquery.nanoscroller/nanoscroller.css"/>
   <link rel="stylesheet" href="css/app.css"/>
+  <link rel="stylesheet" href="css/app_mobile.css"/>
   <!-- endbuild -->
 
   <link rel="icon" href="favicon.ico" type="image/x-icon" />
+
+  <link rel="apple-touch-icon" href="img/iphone_home120.png">
+  <link rel="apple-touch-icon" sizes="120x120" href="img/iphone_home120.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 320px)" href="img/iphone_startup.png">
+
+  <meta name="apple-mobile-web-app-title" content="Telegram Web">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
 
   <meta property="og:title" content="Webogram">
   <meta property="og:url" content="http://zhukov.github.io/webogram/">
@@ -20,71 +31,16 @@
   <meta property="og:site_name" content="Webogram">
   <meta property="og:description" content="Welcome to an experimental web-client of Telegram messenger. See https://github.com/zhukov/webogram for more info.">
 
-  <script type="text/javascript">
-  (function () {
-
-    window.safeConfirm = function (params, callback) {
-      if (typeof params === 'string') {
-        params = {message: params};
-      }
-      var result = false
-      try {
-        result = confirm(params.message);
-      } catch (e) {
-        result = true;
-      }
-      setTimeout(function () {callback(result)}, 10);
-    };
-
-    if (!window.applicationCache || !window.addEventListener) {
-      return;
-    }
-
-    var appCache = window.applicationCache,
-        declined = false,
-        updateTimeout = false,
-        scheduleUpdate = function (delay) {
-          clearTimeout(updateTimeout);
-          updateTimeout = setTimeout(function () {
-            try {
-              appCache.update();
-            } catch (ex) {
-              console.log('appCache.update: ' + ex);
-            }
-          }, delay || 300000);
-        },
-        attach = function () {
-          appCache.addEventListener('updateready', function(e) {
-            if (appCache.status == appCache.UPDATEREADY) {
-              if (!declined) {
-                safeConfirm({type: 'WEBOGRAM_UPDATED_RELOAD', message: 'A new version of Webogram is available. Load it?'}, function (result) {
-                  if (result) {
-                    window.location.reload();
-                  } else {
-                    declined = true;
-                  }
-                });
-                scheduleUpdate();
-              }
-            }
-          }, false);
-          appCache.addEventListener('noupdate', function () {scheduleUpdate()}, false);
-          appCache.addEventListener('error', function () {scheduleUpdate()}, false);
-        };
-
-    scheduleUpdate(3000);
-    window.addEventListener('load', attach);
-  })();
-  </script>
-
 </head>
 <body>
 
-  <div ng-view></div>
+  <div class="page_wrap" ng-view></div>
 
   <!-- build:js js/app.js -->
   <script type="text/javascript" src="vendor/console-polyfill/console-polyfill.js"></script>
   <script type="text/javascript" src="vendor/jquery/jquery.min.js"></script>
+  <script type="text/javascript" src="js/lib/config.js"></script>
+  <script type="text/javascript" src="js/init.js"></script>
   <script type="text/javascript" src="vendor/jquery.nanoscroller/nanoscroller.js"></script>
   <script type="text/javascript" src="vendor/jquery.emojiarea/jquery.emojiarea.js"></script>
 
@@ -92,8 +48,8 @@
   <script type="text/javascript" src="vendor/angular/angular-route.js"></script>
   <script type="text/javascript" src="vendor/angular/angular-animate.js"></script>
   <script type="text/javascript" src="vendor/angular/angular-sanitize.js"></script>
+  <script type="text/javascript" src="vendor/angular/angular-touch.js"></script>
   <script type="text/javascript" src="vendor/ui-bootstrap/ui-bootstrap-custom-tpls-0.10.0.js"></script>
-  <script type="text/javascript" src="vendor/bindonce/bindonce.js"></script>
 
   <script type="text/javascript" src="vendor/jsbn/jsbn_combined.js"></script>
   <script type="text/javascript" src="vendor/cryptoJS/crypto.js"></script>
@@ -101,9 +57,12 @@
   <script type="text/javascript" src="vendor/closure/long.js"></script>
 
 
-  <script type="text/javascript" src="js/lib/config.js"></script>
+  <script type="text/javascript" src="js/lib/utils.js"></script>
+  <script type="text/javascript" src="js/lib/bin_utils.js"></script>
+  <script type="text/javascript" src="js/lib/tl_utils.js"></script>
+  <script type="text/javascript" src="js/lib/ng_utils.js"></script>
   <script type="text/javascript" src="js/lib/mtproto.js"></script>
-  <script type="text/javascript" src="js/util.js"></script>
+  <script type="text/javascript" src="js/lib/mtproto_wrapper.js"></script>
 
   <script type="text/javascript" src="js/app.js"></script>
   <script type="text/javascript" src="js/services.js"></script>

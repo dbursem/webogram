@@ -25,17 +25,20 @@ mv webogram-master $BASE
 
 SCRIPT=/usr/local/bin/webogram
 
+NODEJS=/usr/bin/nodejs
+if [ ! -x '/usr/bin/nodejs' ] ; then
+    NODEJS=node
+fi
 cat > $SCRIPT <<OEF
-cd /opt/webogram
-nodejs server.js >/dev/null 2>&1 &
-firefox localhost:8000/app/index.html >/dev/null 2>&1 &
+$NODEJS $BASE/server.js &>/dev/null &
+google-chrome-unstable localhost:8000/app/index.html &>/dev/null &
 OEF
 
 chmod +x $SCRIPT
 chown root:root $SCRIPT
 
 # ~ expand niet in een shell script
-cat > $HOME/.local/share/applications/webogram.desktop <<OEF
+cat > /usr/share/applications/webogram.desktop <<OEF
 [Desktop Entry]
 Name=Webogram
 Comment=Webbased Telegram client

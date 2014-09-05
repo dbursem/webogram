@@ -3,12 +3,12 @@ var es = require('event-stream');
 var pj = require('./package.json');
 var $ = require('gulp-load-plugins')();
 var concat = require('gulp-concat');
-
+var path = require('path');
 
 // The generated file is being created at src
 // so it can be fetched by usemin.
 gulp.task('templates', function() {
-  return gulp.src('app/partials/*.html')
+  return gulp.src('app/partials/**/*.html')
     .pipe($.angularTemplatecache('templates.js', {
       root: 'partials',
       module: 'myApp.templates',
@@ -47,23 +47,23 @@ gulp.task('copy', function() {
       .pipe(gulp.dest('dist/img')),
     gulp.src('app/vendor/console-polyfill/console-polyfill.js')
       .pipe(gulp.dest('dist/vendor/console-polyfill')),
-    gulp.src('app/js/lib/mtproto.js')
+    gulp.src('app/js/lib/bin_utils.js')
       .pipe(gulp.dest('dist/js/lib')),
     gulp.src('app/vendor/closure/long.js')
       .pipe(gulp.dest('dist/vendor/closure')),
     gulp.src('app/vendor/jsbn/jsbn_combined.js')
       .pipe(gulp.dest('dist/vendor/jsbn')),
+    gulp.src('app/vendor/leemon_bigint/bigint.js')
+      .pipe(gulp.dest('dist/vendor/leemon_bigint')),
     gulp.src('app/vendor/cryptoJS/crypto.js')
       .pipe(gulp.dest('dist/vendor/cryptoJS')),
-    gulp.src('app/vendor/bootstrap/fonts/*')
-      .pipe(gulp.dest('dist/fonts')),
     gulp.src('app/js/background.js')
       .pipe(gulp.dest('dist/js'))
   );
 });
 
-gulp.task('compress-dist', ['add-csp'], function() {
-  return gulp.src('./**/*' , {cwd: process.cwd() + '/dist'})
+gulp.task('compress-dist', ['build'], function() {
+  return gulp.src('**/*', {cwd:  path.join(process.cwd(), '/dist')})
     .pipe($.zip('webogram_v' + pj.version + '.zip'))
     .pipe(gulp.dest('releases'));
 });
@@ -72,27 +72,15 @@ gulp.task('cleanup-dist', ['compress-dist'], function() {
   return gulp.src(['releases/**/*', '!releases/*.zip']).pipe($.clean());
 });
 
-gulp.task('add-csp', ['build'], function() {
-  return gulp.src('dist/index.html')
-    .pipe($.replace(/<html(.*?)>/, '<html$1 ng-csp="">'))
-    .pipe(gulp.dest('dist'));
-});
-
 gulp.task('update-version-manifests', function() {
  return gulp.src(['app/manifest.webapp', 'app/manifest.json'])
     .pipe($.replace(/"version": ".*",/, '"version": "' + pj.version + '",'))
     .pipe(gulp.dest('app'));
 });
 
-gulp.task('update-version-settings', function() {
- return gulp.src('app/partials/settings_modal.html')
-    .pipe($.replace(/<span class="settings_version">alpha .*<\/span>/, '<span class="settings_version">alpha ' + pj.version  + '<\/span>'))
-    .pipe(gulp.dest('app/partials'));
-});
-
-gulp.task('update-version-mtproto', function() {
- return gulp.src('app/js/lib/mtproto.js')
-    .pipe($.replace(/'.+?', 'app_version'/, '\'' + pj.version  + '\', \'app_version\''))
+gulp.task('update-version-config', function() {
+ return gulp.src('app/js/lib/config.js')
+    .pipe($.replace(/version: '.*?'/, 'version: \'' + pj.version  + '\''))
     .pipe(gulp.dest('app/js/lib'));
 });
 
@@ -130,14 +118,69 @@ gulp.task('disable-production', function() {
 });
 
 gulp.task('add-appcache-manifest', function() {
-  return gulp.src(['./dist/**/*', '!dist/manifest.*', '!dist/index.html', '!dist/fonts/*', '!dist/img/icons/icon*.png', '!dist/js/background.js'])
-    .pipe($.manifest({
-      timestamp: true,
-      network: ['http://*', 'https://*', '*'],
-      filename: 'app.manifest',
-      exclude: 'app.manifest'
-    }))
-    .pipe(gulp.dest('./dist'));
+
+  var sources = [
+    './dist/**/*',
+    '!dist/manifest.*',
+    '!dist/index.html',
+    '!dist/fonts/*',
+    '!dist/img/icons/icon*.png',
+    '!dist/js/background.js'
+  ];
+
+  return es.concat(
+    gulp.src(sources)
+      .pipe($.manifest({
+          timestamp: true,
+          network: ['http://*', 'https://*', '*'],
+          filename: 'webogram.appcache',
+          exclude: ['webogram.appcache', 'app.manifest']
+        })
+      )
+      .pipe(gulp.dest('./dist')),
+
+    gulp.src(sources)
+      .pipe($.manifest({
+          timestamp: true,
+          network: ['http://*', 'https://*', '*'],
+          filename: 'app.manifest',
+          exclude: ['webogram.appcache', 'app.manifest']
+        })
+      )
+      .pipe(gulp.dest('./dist'))
+  );
+});
+
+gulp.task('package-dev', function() {
+  return es.concat(
+    gulp.src('app/partials/*.html')
+     .pipe($.angularTemplatecache('templates.js', {
+       root: 'partials',
+       module: 'myApp.templates',
+       standalone: true
+     }))
+     .pipe(gulp.dest('dist_package/js')),
+
+    gulp.src(['app/favicon.ico', 'app/favicon_unread.ico', 'app/manifest.webapp', 'app/manifest.json'])
+     .pipe(gulp.dest('dist_package')),
+    gulp.src(['app/css/**/*'])
+     .pipe(gulp.dest('dist_package/css')),
+    gulp.src(['app/img/**/*'])
+     .pipe(gulp.dest('dist_package/img')),
+    gulp.src('app/vendor/**/*')
+     .pipe(gulp.dest('dist_package/vendor')),
+
+    gulp.src('app/**/*.html')
+      .pipe($.replace(/PRODUCTION_ONLY_BEGIN/g, 'PRODUCTION_ONLY_BEGIN-->'))
+      .pipe($.replace(/PRODUCTION_ONLY_END/, '<!--PRODUCTION_ONLY_END'))
+      .pipe(gulp.dest('dist_package')),
+
+    gulp.src('app/**/*.js')
+      .pipe($.ngmin())
+      .pipe($.replace(/PRODUCTION_ONLY_BEGIN(\*\/)?/g, 'PRODUCTION_ONLY_BEGIN*/'))
+      .pipe($.replace(/(\/\*)?PRODUCTION_ONLY_END/g, '/*PRODUCTION_ONLY_END'))
+      .pipe(gulp.dest('dist_package'))
+    );
 });
 
 
@@ -145,7 +188,7 @@ gulp.task('clean', function() {
   return gulp.src(['dist/*', 'app/js/templates.js', '!dist/.git']).pipe($.clean());
 });
 
-gulp.task('bump', ['update-version-manifests', 'update-version-settings', 'update-version-mtproto'], function () {
+gulp.task('bump', ['update-version-manifests', 'update-version-config'], function () {
   gulp.start('update-version-comments');
 });
 
