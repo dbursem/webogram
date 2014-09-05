@@ -2,24 +2,29 @@
 
   <a class="modal-close-button" ng-click="$close()"><i></i></a>
 
-  <div class="modal-header">
-    <h4 ng-if="error" class="modal-title" ng-switch="error.type">
+  <div class="modal-body">
+
+    <h4 ng-if="error" class="modal_simple_header" ng-switch="error.type">
       <span ng-switch-when="ACCOUNT_REQUIRED">No account</span>
       <span ng-switch-default ng-switch="error.code">
         <span ng-switch-when="400">Error</span>
         <span ng-switch-when="401">Unauthorized</span>
         <span ng-switch-when="403">Access denied</span>
         <span ng-switch-when="404">Not found</span>
+        <span ng-switch-when="406">Network error</span>
         <span ng-switch-when="420">Too fast</span>
         <span ng-switch-default>Server error</span>
       </span>
     </h4>
-    <h4 ng-if="!error" class="modal-title" ng-bind="title || 'Alert'"></h4>
-  </div>
-
-  <div class="modal-body">
+    <h4 ng-if="!error" class="modal_simple_header" ng-bind="title || 'Alert'"></h4>
 
     <div ng-if="error" class="error_modal_description" ng-switch="error.type">
+      <span ng-switch-when="NETWORK_BAD_REQUEST">
+        Please check your internet connection.
+      </span>
+      <span ng-switch-when="NETWORK_BAD_RESPONSE">
+        Please check your internet connection.
+      </span>
       <span ng-switch-when="FIRSTNAME_INVALID">
         The first name you entered is invalid.
       </span>
@@ -35,6 +40,9 @@
       <span ng-switch-when="PHOTO_INVALID_DIMENSIONS">
         The photo dimensions are invalid, please select another file.
       </span>
+      <span ng-switch-when="VIDEO_EXT_INVALID">
+        The video file extension is invalid or unsupported, please select another file.
+      </span>
       <span ng-switch-when="PHOTO_CROP_SIZE_SMALL">
         The photo you provided is too small.
       </span>
@@ -42,11 +50,19 @@
         Sorry, there is no <strong>Telegram</strong> account for {{phone | phoneNumber}}<br/><br/>
         Please <strong>sign up</strong> using our mobile apps for <a href="https://telegram.org/" target="_blank">iOS</a> or <a href="https://telegram.org/" target="_blank">Android</a>.
       </span>
-
+      <span ng-switch-when="USER_NOT_USING_TELEGRAM">
+        Sorry, there is no <strong>Telegram</strong> account with the phone number you provided.
+      </span>
+      <span ng-switch-when="USERS_NOT_USING_TELEGRAM">
+        Sorry, there are no <strong>Telegram</strong> accounts with the phone numbers you provided.
+      </span>
+      <span ng-switch-when="PHONEBOOK_GET_CONTACTS_FAILED">
+        Telegram need access to phonebook to import contacts.
+      </span>
 
       <div ng-switch-default ng-switch="error.code">
         <span ng-switch-when="400">One of the params is missing or invalid.</span>
-        <span ng-switch-when="401">This action requires authorization access. Please <a href="#/auth">log in</a>.</span>
+        <span ng-switch-when="401">This action requires authorization access. Please <a href="#/login">log in</a>.</span>
         <span ng-switch-when="403">You are not allowed for this action.</span>
         <span ng-switch-when="404">The page was not found.</span>
         <span ng-switch-when="420">You are performing too many actions. Please try again later.</span>

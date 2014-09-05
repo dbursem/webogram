@@ -1,5 +1,5 @@
 /*!
- * Webogram v0.0.21 - messaging web application for MTProto
+ * Webogram v0.2.9 - messaging web application for MTProto
  * https://github.com/zhukov/webogram
  * Copyright (C) 2014 Igor Zhukov <igor.beatle@gmail.com>
  * https://github.com/zhukov/webogram/blob/master/LICENSE
@@ -52,7 +52,8 @@ angular.module('myApp.filters', [])
   }])
 
   .filter('dateOrTime', ['$filter', function($filter) {
-    var cachedDates = {};
+    var cachedDates = {},
+        dateFilter = $filter('date');
 
     return function (timestamp) {
 
@@ -70,7 +71,34 @@ angular.module('myApp.filters', [])
       else if (diff > 43200000) { // 12 hours
         format = 'EEE';
       }
-      return cachedDates[timestamp] = $filter('date')(ticks, format);
+      return cachedDates[timestamp] = dateFilter(ticks, format);
+    }
+  }])
+
+  .filter('time', ['$filter', function($filter) {
+    var cachedDates = {},
+        dateFilter = $filter('date'),
+        format = Config.Navigator.mobile ? 'HH:mm' : 'HH:mm:ss';
+
+    return function (timestamp) {
+      if (cachedDates[timestamp]) {
+        return cachedDates[timestamp];
+      }
+
+      return cachedDates[timestamp] = dateFilter(timestamp * 1000, format);
+    }
+  }])
+
+  .filter('myDate', ['$filter', function($filter) {
+    var cachedDates = {},
+        dateFilter = $filter('date');
+
+    return function (timestamp) {
+      if (cachedDates[timestamp]) {
+        return cachedDates[timestamp];
+      }
+
+      return cachedDates[timestamp] = dateFilter(timestamp * 1000, 'fullDate');
     }
   }])
 

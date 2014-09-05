@@ -1,5 +1,5 @@
 /*!
- * Webogram v0.0.21 - messaging web application for MTProto
+ * Webogram v0.2.9 - messaging web application for MTProto
  * https://github.com/zhukov/webogram
  * Copyright (C) 2014 Igor Zhukov <igor.beatle@gmail.com>
  * https://github.com/zhukov/webogram/blob/master/LICENSE
@@ -7,31 +7,15 @@
 
 'use strict';
 
-window._testMode = location.search.indexOf('test=1') > 0;
-window._debugMode = location.search.indexOf('debug=1') > 0;
-window._osX = (navigator.platform || '').toLowerCase().indexOf('mac') != -1 ||
-              (navigator.userAgent || '').toLowerCase().indexOf('mac') != -1;
-window._retina = window.devicePixelRatio > 1;
-
-if (!window._osX) {
-  $('body').addClass('non_osx');
-}
-$('body').addClass(window._retina ? 'is_2x' : 'is_1x');
-
-$(window).on('load', function () {
-  setTimeout(function () {
-    window.scrollTo(0,1);
-  }, 0);
-});
-
 // Declare app level module which depends on filters, and services
 angular.module('myApp', [
   'ngRoute',
-  'ngAnimate',
   'ngSanitize',
+  'ngTouch',
   'ui.bootstrap',
-  'pasvaz.bindonce',
-  'mtproto.services',
+  'izhukov.utils',
+  'izhukov.mtproto',
+  'izhukov.mtproto.wrapper',
   'myApp.filters',
   'myApp.services',
   /*PRODUCTION_ONLY_BEGIN
@@ -40,7 +24,7 @@ angular.module('myApp', [
   'myApp.directives',
   'myApp.controllers'
 ]).
-config(['$locationProvider', '$routeProvider', '$compileProvider', function($locationProvider, $routeProvider, $compileProvider) {
+config(['$locationProvider', '$routeProvider', '$compileProvider', 'StorageProvider', function($locationProvider, $routeProvider, $compileProvider, StorageProvider) {
 
   var icons = {}, reverseIcons = {}, i, j, hex, name, dataItem, row, column, totalColumns;
 
@@ -65,11 +49,25 @@ config(['$locationProvider', '$routeProvider', '$compileProvider', function($loc
   $compileProvider.imgSrcSanitizationWhitelist(/^\s*(https?|ftp|file|blob|filesystem|chrome-extension|app):|data:image\//);
   $compileProvider.aHrefSanitizationWhitelist(/^\s*(https?|ftp|file|mailto|blob|filesystem|chrome-extension|app):|data:image\//);
 
+  if (Config.Modes.test) {
+    StorageProvider.setPrefix('t_');
+  }
 
-  // $locationProvider.html5Mode(true);
   $routeProvider.when('/', {templateUrl: 'partials/welcome.html', controller: 'AppWelcomeController'});
   $routeProvider.when('/login', {templateUrl: 'partials/login.html', controller: 'AppLoginController'});
   $routeProvider.when('/im', {templateUrl: 'partials/im.html', controller: 'AppIMController', reloadOnSearch: false});
   $routeProvider.otherwise({redirectTo: '/'});
 
 }]);
+
+
+(function () {
+  var classes = [
+    Config.Navigator.osX ? 'osx' : 'non_osx',
+    Config.Navigator.retina ? 'is_2x' : 'is_1x'
+  ];
+  if (Config.Modes.ios_standalone) {
+    classes.push('ios_standalone');
+  }
+  $(document.body).addClass(classes.join(' '));
+})();

@@ -1,3 +1,4 @@
+[![Stories in Ready](https://badge.waffle.io/zhukov/webogram.png?label=ready&title=Ready)](https://waffle.io/zhukov/webogram)
 ## [Webogram](http://zhukov.github.io/webogram) – UNOFFICIAL Telegram Web App
 
 Telegram offers great [apps for mobile communication](https://www.telegram.org). It is based on the [MTProto protocol](https://core.telegram.org/mtproto) and has an [Open API](http://core.telegram.org/api). I personally like Telegram for its speed and cloud-support (that makes a web app possible, unlike in the case of WA and others).
@@ -25,30 +26,29 @@ Here are some screenshots of the interface:
 * View list of existings chats (up-posting) with infinite scrolling
 * View messages history for each chat/group (bottom-posting) with infinite scrolling
 * View brief profile info
+* Create new group
 * View/edit group info
-* View/edit members list
+* View/edit group participants
 * View media in messages: photo, video
 * Download documents from messages
 * Emoji display in all browsers (Chrome, non-OSX ones)
-* Emoji keyboard
+* Emoji keyboard, recent emojis
 * Send plain-text messages to user or group
 * Send files (photos or documents) via attach icon or drag'n'drop
 * Desktop notifications
-* Create new group
-* Edit group participants
 * Settings
 * Edit profile/userpic
-* Contacts
+* Contacts view, search
+* Contacts add/edit
 * Edit, delete, forward messsages
+* Search messages
+* Registration
 
 
 ### Unsupported at the moment
 
-* Registration
-* Contacts add/edit
 * Secret chats
-* Search messages
-* a lot more...
+* ...
 
 
 ## Technical details
@@ -67,10 +67,6 @@ Install [node.js](http://nodejs.org/) and run `node server.js`. Open page http:/
 #### Running as Chrome Packaged App
 
 It is possible to run this application in Chrome browser as a packaged app. In order to do this, open this URL in Chrome: `chrome://extensions/`, then tick "Developer mode" and press "Load unpacked extension...". Select the downloaded `app` folder and Webogram application should appear in the list.
-Also it's necessary to replace following line in index.html:
-```<html lang="en" ng-app="myApp"><!-- ng-csp=""-->```
-with:
-```<html lang="en" ng-app="myApp" ng-csp="">```
 
 
 You can also download this application from Chrome Web Store: [chrome.google.com/webstore/detail/telegram-unofficial/clhhggbfdinjmjhajaheehoeibfljjno](https://chrome.google.com/webstore/detail/telegram-unofficial/clhhggbfdinjmjhajaheehoeibfljjno). This is more secure way to use app than plain HTTP in web, because sources are downloaded only once and via HTTPS.

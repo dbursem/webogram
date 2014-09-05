@@ -10,6 +10,7 @@
         <img
           class="user_modal_image"
           my-load-thumb
+          watch="true"
           thumb="chatFull.thumb"
         />
       </div>
@@ -22,42 +23,39 @@
           </ng-pluralize>
         </p>
 
-        <div class="chat_modal_settings_wrap">
+        <div class="chat_modal_actions_wrap clearfix">
 
-          <div class="chat_modal_actions_wrap clearfix">
+          <button ng-if="!chatFull.chat.left &amp;&amp; chatFull.participants.participants.length" class="btn btn-primary chat_modal_invite_btn" ng-click="inviteToGroup()">Add member</button>
+          <button ng-if="chatFull.chat._ != 'chatForbidden' &amp;&amp; chatFull.chat.left" class="btn btn-primary chat_modal_main_btn" ng-click="returnToGroup()">Return to group</button>
+          <button ng-if="chatFull.chat._ == 'chatForbidden'" class="btn btn-danger chat_modal_delete_btn" ng-click="flushHistory()">Delete chat</button>
 
-            <button ng-if="!chatFull.chat.left &amp;&amp; chatFull.participants.participants.length" class="btn btn-primary chat_modal_invite_btn" ng-click="inviteToGroup()">Add member</button>
-            <button ng-if="chatFull.chat._ != 'chatForbidden' &amp;&amp; chatFull.chat.left" class="btn btn-primary chat_modal_main_btn" ng-click="returnToGroup()">Return to group</button>
-            <button ng-if="chatFull.chat._ == 'chatForbidden'" class="btn btn-danger chat_modal_delete_btn" ng-click="flushHistory()">Delete chat</button>
-
-            <span ng-if="chatFull.chat._ != 'chatForbidden' &amp;&amp; !chatFull.chat.left &amp;&amp; !photo.updating" class="btn btn-primary chat_modal_main_btn" >
-              <input my-file-upload  type="file" multiple="false" class="im_attach_input" size="120" multiple="false" accept="image/x-png, image/png, image/gif, image/jpeg" />
-              Update photo
-            </span>
-            <span ng-if="photo.updating" class="btn btn-primary chat_modal_main_btn disabled" disabled>
-              Updating<span my-loading-dots></span>
-            </span>
+          <span ng-if="chatFull.chat._ != 'chatForbidden' &amp;&amp; !chatFull.chat.left &amp;&amp; !photo.updating" class="btn btn-primary chat_modal_main_btn" >
+            <input my-file-upload  type="file" multiple="false" class="im_attach_input" size="120" multiple="false" accept="image/x-png, image/png, image/gif, image/jpeg" />
+            Update photo
+          </span>
+          <span ng-if="photo.updating" class="btn btn-primary chat_modal_main_btn disabled" disabled>
+            Updating<span my-loading-dots></span>
+          </span>
 
 
-            <div class="dropdown chat_modal_other_btn" ng-if="chatFull.chat._ != 'chatForbidden' &amp;&amp; !chatFull.chat.left">
-              <button class="btn btn-link dropdown-toggle">More<i class="icon icon-caret"></i></button>
-              <ul class="dropdown-menu">
-                <li ng-if="chatFull.thumb.location">
-                  <a ng-click="deletePhoto()">Delete photo</a>
-                </li>
-                <li>
-                  <a ng-click="editTitle()">Edit group</a>
-                </li>
-                <li>
-                  <a ng-click="leaveGroup()">Leave group</a>
-                </li>
-                <li>
-                  <a ng-click="flushHistory()">Delete chat</a>
-                </li>
-              </ul>
-            </div>
-
+          <div class="dropdown chat_modal_other_btn" ng-if="chatFull.chat._ != 'chatForbidden' &amp;&amp; !chatFull.chat.left">
+            <button class="btn btn-link dropdown-toggle">More<i class="icon icon-caret"></i></button>
+            <ul class="dropdown-menu">
+              <li ng-if="chatFull.thumb.location">
+                <a ng-click="deletePhoto()">Delete photo</a>
+              </li>
+              <li>
+                <a ng-click="editTitle()">Edit group</a>
+              </li>
+              <li>
+                <a ng-click="leaveGroup()">Leave group</a>
+              </li>
+              <li>
+                <a ng-click="flushHistory()">Delete chat</a>
+              </li>
+            </ul>
           </div>
+
         </div>
 
       </div>
@@ -84,18 +82,13 @@
 
           <div class="chat_modal_participant_wrap clearfix" ng-repeat="participant in chatFull.participants.participants | orderBy:'-user.sortStatus'">
             <a ng-if="participant.canKick" ng-click="kickFromGroup(participant.user_id)"  class="chat_modal_participant_kick pull-right">Kick</a>
-            <a ng-click="openUser(participant.user_id)" class="chat_modal_participant_photo pull-left">
-              <img
-                class="chat_modal_participant_photo"
-                my-load-thumb
-                thumb="participant.userPhoto"
-              />
-              <i class="icon status_online" ng-show="participant.user.status._ == 'userStatusOnline'"></i>
-            </a>
+
+            <a class="chat_modal_participant_photo pull-left" my-user-photolink="participant.user_id" img-class="chat_modal_participant_photo" status="true"></a>
+
             <div class="chat_modal_participant_name">
-              <a ng-click="openUser(participant.user.id)" ng-bind-html="participant.user.rFullName"></a>
+              <a my-user-link="participant.user_id"></a>
             </div>
-            <div class="chat_modal_participant_status">{{participant.user | userStatus}}</div>
+            <div class="chat_modal_participant_status" my-user-status="::participant.user_id"></div>
           </div>
 
         </div>
